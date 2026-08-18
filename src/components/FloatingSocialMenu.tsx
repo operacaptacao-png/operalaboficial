@@ -13,7 +13,7 @@ export default function FloatingSocialMenu() {
     {
       label: "WhatsApp",
       icon: MessageCircle,
-      url: "https://wa.me/5575999999999",
+      url: "https://wa.me/557599839567",
       bgColor: "bg-emerald-500 hover:bg-emerald-600",
       textColor: "text-white"
     },
