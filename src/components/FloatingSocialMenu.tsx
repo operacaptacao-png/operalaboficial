@@ -13,14 +13,14 @@ export default function FloatingSocialMenu() {
     {
       label: "WhatsApp",
       icon: MessageCircle,
-      url: "https://wa.me/55759983-9567",
+      url: "https://wa.me/5575999839567",
       bgColor: "bg-emerald-500 hover:bg-emerald-600",
       textColor: "text-white"
     },
     {
       label: "Instagram",
       icon: Instagram,
-      url: "https://www.instagram.com/operaidiomas",
+      url: "https://www.instagram.com/operaidiomasoficial",
       bgColor: "bg-pink-600 hover:bg-pink-700",
       textColor: "text-white"
     },
@@ -34,7 +34,7 @@ export default function FloatingSocialMenu() {
     {
       label: "Site Oficial",
       icon: Globe,
-      url: "https://www.operaidiomas.com.br",
+      url: "https://operaidiomas.com.br/",
       bgColor: "bg-[#0b2545] hover:bg-black",
       textColor: "text-[#eebd1a]"
     }
