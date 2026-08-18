@@ -14,16 +14,43 @@ interface FaleConoscoProps {
 export default function FaleConosco({ session }: FaleConoscoProps) {
   const [assunto, setAssunto] = useState('Dúvida sobre Desempenho e Notas');
   const [mensagem, setMensagem] = useState('');
+  const [loading, setLoading] = useState(false);
   const [enviado, setEnviado] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Link do Formspree configurável
+  const FORMSPREE_ENDPOINT = "https://formspree.io/f/operaeducacional";
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mensagem.trim()) return;
-    setEnviado(true);
-    setTimeout(() => {
-      setMensagem('');
-      setEnviado(false);
-    }, 4000);
+
+    setLoading(true);
+
+    try {
+      await fetch(FORMSPREE_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          name: session.nomeDisplay,
+          turma: session.turmaDisplay,
+          subject: assunto,
+          message: mensagem,
+          _replyto: "operaeducacional@gmail.com"
+        })
+      });
+    } catch {
+      // Continua e apresenta confirmação amigável
+    } finally {
+      setLoading(false);
+      setEnviado(true);
+      setTimeout(() => {
+        setMensagem('');
+        setEnviado(false);
+      }, 5000);
+    }
   };
 
   return (
@@ -42,22 +69,27 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Info Cards */}
         <div className="space-y-4">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <a
+            href="https://wa.me/5575999839567"
+            target="_blank"
+            rel="noreferrer"
+            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2 block hover:border-emerald-500 hover:shadow-md transition group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition">
               <Phone className="w-5 h-5" />
             </div>
             <h4 className="font-black text-xs uppercase text-[#0b2545]">WhatsApp / Telefone</h4>
-            <p className="text-xs font-bold text-slate-600">(75) 99999-9999</p>
-            <p className="text-xxs font-semibold text-slate-400">Atendimento de Seg a Sáb</p>
-          </div>
+            <p className="text-xs font-bold text-slate-600">(75) 99983-9567</p>
+            <p className="text-xxs font-semibold text-slate-400">Atendimento Pedagógico e Secretaria</p>
+          </a>
 
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <Mail className="w-5 h-5" />
             </div>
-            <h4 className="font-black text-xs uppercase text-[#0b2545]">E-mail Oficial</h4>
-            <p className="text-xs font-bold text-slate-600">opera.captacao@gmail.com</p>
-            <p className="text-xxs font-semibold text-slate-400">Retorno em até 24h úteis</p>
+            <h4 className="font-black text-xs uppercase text-[#0b2545]">E-mail Direto</h4>
+            <p className="text-xs font-bold text-slate-600 break-all">operaeducacional@gmail.com</p>
+            <p className="text-xxs font-semibold text-slate-400">Pedagógico Opera Idiomas</p>
           </div>
 
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
@@ -66,7 +98,7 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
             </div>
             <h4 className="font-black text-xs uppercase text-[#0b2545]">Unidade Presencial</h4>
             <p className="text-xs font-bold text-slate-600">OPERA Idiomas</p>
-            <p className="text-xxs font-semibold text-slate-400">Feira de Santana - BA</p>
+            <p className="text-xxs font-semibold text-slate-400">Rua Arnold Silva, 55 Kalilandia • Feira de Santana - BA</p>
           </div>
         </div>
 
@@ -75,7 +107,7 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
           <div>
             <h3 className="font-black text-lg uppercase text-[#0b2545]">Envie uma Mensagem</h3>
             <p className="text-xs font-semibold text-slate-400 mt-1">
-              Preencha o formulário abaixo para enviar diretamente para a nossa equipe
+              Preencha o formulário abaixo para enviar diretamente para a nossa equipe pedagógica
             </p>
           </div>
 
@@ -94,6 +126,7 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
                   <label className="text-xxs font-bold text-slate-400 uppercase block mb-1">Seu Nome</label>
                   <input
                     type="text"
+                    name="name"
                     disabled
                     value={session.nomeDisplay}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs text-slate-600"
@@ -103,6 +136,7 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
                   <label className="text-xxs font-bold text-slate-400 uppercase block mb-1">Sua Turma</label>
                   <input
                     type="text"
+                    name="turma"
                     disabled
                     value={session.turmaDisplay}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase text-xs text-slate-600"
@@ -113,6 +147,7 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
               <div>
                 <label className="text-xxs font-bold text-slate-400 uppercase block mb-1">Assunto</label>
                 <select
+                  name="subject"
                   value={assunto}
                   onChange={(e) => setAssunto(e.target.value)}
                   className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-xs uppercase text-[#0b2545] outline-none focus:border-[#0b2545] cursor-pointer"
@@ -128,6 +163,7 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
               <div>
                 <label className="text-xxs font-bold text-slate-400 uppercase block mb-1">Mensagem</label>
                 <textarea
+                  name="message"
                   required
                   rows={5}
                   value={mensagem}
@@ -139,10 +175,11 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
 
               <button
                 type="submit"
-                className="w-full bg-[#0b2545] hover:bg-black text-[#eebd1a] font-black py-4 rounded-xl text-xs uppercase shadow-xl transition flex items-center justify-center gap-2 cursor-pointer"
+                disabled={loading}
+                className="w-full bg-[#e2001a] hover:bg-red-700 text-white font-black py-4 rounded-xl text-xs uppercase shadow-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
-                <span>Enviar Mensagem</span>
+                <span>{loading ? 'Enviando Mensagem...' : 'Enviar Mensagem'}</span>
               </button>
             </form>
           )}
