@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OPERALAB - Portal Integrado</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- CDN html2pdf.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  </head>
+  <body>
+    <!-- PRELOADERS IMAGENS -->
+    <div style="width: 0; height: 0; overflow: hidden; opacity: 0;" aria-hidden="true">
+        <img src="https://i.postimg.cc/fWcV4xpx/Assinatura-em-png.png" alt="Preload Assinatura">
+        <img src="https://i.postimg.cc/MGGygYGg/logo_opera_png.png" alt="Preload Logo Marca D'água">
+        <img src="https://i.postimg.cc/MGGygYGg/logo-opera-png.png" alt="Preload Logo">
+        <img src="https://i.postimg.cc/dQx0d4bk/logo-do-opera-com-nome.png" alt="Preload Logo Topo">
+    </div>
+
+    <!-- ÁREA DO CERTIFICADO OFICIAL -->
+    <div id="area-impressao-certificado">
+        <div class="folha-certificado" id="pagina-certificado"></div>
+        <div class="folha-desempenho" id="pagina-desempenho"></div>
+    </div>
+
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

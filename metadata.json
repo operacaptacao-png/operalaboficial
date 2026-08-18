@@ -1,0 +1,6 @@
+{
+  "name": "OPERALAB - Portal Integrado",
+  "description": "Portal Educacional OPERALAB - Gestão de Desempenho, Frequência, Reposições, Diário de Classe, Áudios, Calendário e Retenção.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
