@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { UserSession, ReposicaoItem } from '../types';
+import { UserSession, ReposicaoItem, StudentPerformanceData } from '../types';
 import { PERF_MASTER_DB, HORARIOS_ATIVOS } from '../data/database';
 import { 
   fetchReposicoes, 
@@ -31,19 +31,21 @@ import {
 
 interface RetencaoPanelProps {
   session: UserSession;
+  perfData?: StudentPerformanceData;
 }
 
-export default function RetencaoPanel({ session }: RetencaoPanelProps) {
+export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelProps) {
   const [visao, setVisao] = useState<'pesquisa' | 'gestao'>('pesquisa');
 
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<{ aluno: string; turma: string; prof: string; faltas: string[] }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ aluno: string; turma: string; prof: string; faltas: string[]; temDuasFaltas: boolean }[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  // Radar 2+ faltas state
-  const [radarResults, setRadarResults] = useState<{ aluno: string; turma: string; prof: string; faltas: string[] }[]>([]);
+  // Radar state
+  const [radarType, setRadarType] = useState<'rapido' | 'detalhado'>('rapido');
+  const [radarResults, setRadarResults] = useState<{ aluno: string; turma: string; prof: string; faltas: string[]; temDuasFaltas: boolean }[]>([]);
   const [radarLoading, setRadarLoading] = useState(false);
   const [radarProgress, setRadarProgress] = useState('');
 
@@ -79,6 +81,52 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
   useEffect(() => {
     loadReposicoes();
   }, []);
+
+  // Extrai as faltas da base de desempenho (perfData)
+  // Cores: 1 = Vermelho, 2 = Laranja, 3 = Amarelo (correspondentes matematicamente a falta / reposição necessária)
+  const extractAlunoFaltas = (alunoNome: string, turmaNome: string): { faltas: string[]; temDuasFaltas: boolean } => {
+    const norm = normalizeString(alunoNome);
+    let notas = perfData[alunoNome] || [];
+    if (!notas || notas.length === 0) {
+      const matchKey = Object.keys(perfData).find(
+        (k) => normalizeString(k) === norm || normalizeString(k).includes(norm) || norm.includes(normalizeString(k))
+      );
+      if (matchKey) {
+        notas = perfData[matchKey];
+      }
+    }
+
+    const isEspanhol = turmaNome.toUpperCase().startsWith('ESP');
+    const maxLessons = isEspanhol ? 5 : 8;
+    const faltas: string[] = [];
+    const avaliadas: { idx: number; isFalta: boolean }[] = [];
+
+    for (let i = 0; i < maxLessons; i++) {
+      const lesson = notas[i];
+      if (lesson) {
+        const asVal = Number(lesson.as);
+        if (asVal > 0) {
+          // Cores Vermelho (1), Laranja (2) e Amarelo (3) são faltas
+          const isFalta = asVal === 1 || asVal === 2 || asVal === 3;
+          avaliadas.push({ idx: i, isFalta });
+          if (isFalta) {
+            faltas.push(`Lesson ${i + 1}`);
+          }
+        }
+      }
+    }
+
+    let temDuasFaltas = faltas.length >= 2;
+    if (avaliadas.length >= 2) {
+      const ult = avaliadas[avaliadas.length - 1];
+      const pen = avaliadas[avaliadas.length - 2];
+      if (ult.isFalta && pen.isFalta) {
+        temDuasFaltas = true;
+      }
+    }
+
+    return { faltas, temDuasFaltas };
+  };
 
   // Time conversion helper
   const timeToMins = (t: string) => {
@@ -150,7 +198,7 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
     }
   }, [dataDesejada, profSub, tipoAula, modalidade, reposicoes]);
 
-  // Pesquisa individual Safire
+  // Pesquisa individual Safire + Performance
   const handleBuscarAluno = async () => {
     if (!searchTerm.trim()) return;
     setSearchLoading(true);
@@ -170,12 +218,77 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
       }
     }
 
+    for (const alunoNuvem in perfData) {
+      if (normalizeString(alunoNuvem).includes(term)) {
+        const jaExiste = matches.some((m) => normalizeString(m.aluno) === normalizeString(alunoNuvem));
+        if (!jaExiste) {
+          matches.push({ aluno: alunoNuvem, turma: 'LAB', prof: 'STAFF' });
+        }
+      }
+    }
+
+    // Se não encontrou no DB local ou para garantir pesquisa direta no Safire
+    if (matches.length === 0) {
+      try {
+        const directSafire = await checkSafireFaltas(searchTerm, true);
+        if (!directSafire.error && directSafire.aluno) {
+          matches.push({
+            aluno: directSafire.aluno,
+            turma: directSafire.turma || 'Turma Safire',
+            prof: directSafire.professor || 'STAFF'
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const results = await Promise.all(
       matches.map(async (m) => {
-        const check = await checkSafireFaltas(m.aluno);
+        const perfInfo = extractAlunoFaltas(m.aluno, m.turma);
+        let todasFaltas = [...perfInfo.faltas];
+        let turmaAtual = m.turma;
+        let profAtual = m.prof;
+        let has2Plus = perfInfo.temDuasFaltas;
+
+        try {
+          const check = await checkSafireFaltas(m.aluno);
+          if (!check.error) {
+            if (check.turma) turmaAtual = check.turma;
+            if (check.professor) profAtual = check.professor;
+            if (check.totalFaltas !== undefined && check.totalFaltas >= 2) {
+              has2Plus = true;
+            }
+
+            if (check.quaisFaltou && Array.isArray(check.quaisFaltou)) {
+              check.quaisFaltou.forEach((f) => {
+                if (!todasFaltas.includes(f)) {
+                  todasFaltas.push(f);
+                }
+              });
+            }
+            if (check.quaisAgendar && Array.isArray(check.quaisAgendar)) {
+              check.quaisAgendar.forEach((f) => {
+                if (!todasFaltas.includes(f)) {
+                  todasFaltas.push(f);
+                }
+              });
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        if (todasFaltas.length >= 2) {
+          has2Plus = true;
+        }
+
         return {
-          ...m,
-          faltas: !check.error && check.quaisFaltou ? check.quaisFaltou : []
+          aluno: m.aluno,
+          turma: turmaAtual,
+          prof: profAtual,
+          faltas: todasFaltas,
+          temDuasFaltas: has2Plus
         };
       })
     );
@@ -184,11 +297,12 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
     setSearchLoading(false);
   };
 
-  // Radar batch scan para alunos com 2+ faltas
-  const handleStartRadar = async () => {
+  // Radar batch scan para alunos com faltas cruzando Planilha + Safire
+  const handleStartRadar = async (tipo: 'rapido' | 'detalhado') => {
+    setRadarType(tipo);
     setRadarLoading(true);
     setRadarResults([]);
-    setRadarProgress('Iniciando varredura rápida de retenção...');
+    setRadarProgress(`Iniciando ${tipo === 'rapido' ? 'Radar Rápido (2+ Faltas)' : 'Radar Detalhado (Todas as Faltas)'}...`);
 
     const allStudents: { aluno: string; turma: string; prof: string }[] = [];
     for (const prof in PERF_MASTER_DB) {
@@ -199,32 +313,85 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
       }
     }
 
-    const batchSize = 6;
-    const found: { aluno: string; turma: string; prof: string; faltas: string[] }[] = [];
+    // Inclui alunos presentes em perfData
+    for (const alunoNuvem in perfData) {
+      const jaExiste = allStudents.some((s) => normalizeString(s.aluno) === normalizeString(alunoNuvem));
+      if (!jaExiste) {
+        allStudents.push({ aluno: alunoNuvem, turma: 'LAB', prof: 'STAFF' });
+      }
+    }
 
-    for (let i = 0; i < allStudents.length; i += batchSize) {
-      const batch = allStudents.slice(i, i + batchSize);
-      const res = await Promise.all(
-        batch.map(async (st) => {
-          const check = await checkSafireFaltas(st.aluno);
-          return {
-            ...st,
-            faltas: !check.error && check.quaisFaltou ? check.quaisFaltou : []
-          };
+    const found: { aluno: string; turma: string; prof: string; faltas: string[]; temDuasFaltas: boolean }[] = [];
+
+    // 1. Processa alunos da planilha de notas e alunos com faltas
+    // Executa em chunks para alta performance
+    const chunkSize = 15;
+    for (let i = 0; i < allStudents.length; i += chunkSize) {
+      const chunk = allStudents.slice(i, i + chunkSize);
+      setRadarProgress(`Analisando alunos ${i + 1} até ${Math.min(i + chunkSize, allStudents.length)} de ${allStudents.length}...`);
+
+      const chunkResults = await Promise.all(
+        chunk.map(async (st) => {
+          const perfInfo = extractAlunoFaltas(st.aluno, st.turma);
+          let todasFaltas = [...perfInfo.faltas];
+          let has2Plus = perfInfo.temDuasFaltas;
+          let turmaAtual = st.turma;
+          let profAtual = st.prof;
+
+          // Se já tem falta no perfData ou se o cache Safire está pronto
+          const normKey = `safire_${normalizeString(st.aluno)}`;
+          const cachedSafire = localStorage.getItem(normKey);
+          if (cachedSafire) {
+            try {
+              const check = JSON.parse(cachedSafire);
+              if (check && !check.error) {
+                if (check.turma) turmaAtual = check.turma;
+                if (check.professor) profAtual = check.professor;
+                if (check.totalFaltas !== undefined && check.totalFaltas >= 2) has2Plus = true;
+                if (check.quaisFaltou && Array.isArray(check.quaisFaltou)) {
+                  check.quaisFaltou.forEach((f: string) => {
+                    if (!todasFaltas.includes(f)) todasFaltas.push(f);
+                  });
+                }
+                if (check.quaisAgendar && Array.isArray(check.quaisAgendar)) {
+                  check.quaisAgendar.forEach((f: string) => {
+                    if (!todasFaltas.includes(f)) todasFaltas.push(f);
+                  });
+                }
+              }
+            } catch {
+              // ignore
+            }
+          }
+
+          if (todasFaltas.length >= 2) {
+            has2Plus = true;
+          }
+
+          const atende = tipo === 'rapido' ? has2Plus : todasFaltas.length > 0;
+          if (atende) {
+            return {
+              aluno: st.aluno,
+              turma: turmaAtual,
+              prof: profAtual,
+              faltas: todasFaltas,
+              temDuasFaltas: has2Plus
+            };
+          }
+          return null;
         })
       );
 
-      res.forEach((r) => {
-        if (r.faltas.length >= 2) {
-          found.push(r);
+      chunkResults.forEach((res) => {
+        if (res && !found.some((f) => normalizeString(f.aluno) === normalizeString(res.aluno))) {
+          found.push(res);
         }
       });
-      setRadarResults([...found]);
-      setRadarProgress(`Analisando presenças (${Math.min(i + batchSize, allStudents.length)} de ${allStudents.length} alunos)...`);
     }
 
+    setRadarResults([...found]);
+    setRadarProgress(`Varredura concluída! ${found.length} aluno(s) identificado(s) com ${tipo === 'rapido' ? '2+ faltas ou faltas críticas' : 'faltas registradas'}.`);
     setRadarLoading(false);
-    setRadarProgress(`Varredura concluída! ${found.length} aluno(s) identificado(s) com 2 ou mais faltas.`);
   };
 
   // Open modal
@@ -247,7 +414,7 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
     }
 
     setSavingAgendamento(true);
-    const success = await agendarReposicao({
+    await agendarReposicao({
       tipo: tipoAula,
       aluno: selectedStudentInfo.aluno,
       turma: selectedStudentInfo.turma,
@@ -374,32 +541,41 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
                     className="p-5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-[#0b2545] transition"
                   >
                     <div>
-                      <h4 className="font-black text-sm text-[#0b2545] uppercase">{r.aluno}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-black text-sm text-[#0b2545] uppercase">{r.aluno}</h4>
+                        {r.temDuasFaltas && (
+                          <span className="bg-red-600 text-white text-3xs font-black uppercase px-2 py-0.5 rounded-full">
+                            2+ Faltas
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xxs font-bold text-slate-500 uppercase mt-0.5">
                         Turma: <strong className="text-[#0b2545]">{r.turma}</strong> • Professor: <strong>{r.prof}</strong>
                       </p>
                       {r.faltas.length > 0 ? (
                         <div className="flex flex-wrap items-center gap-1.5 mt-2">
                           <span className="text-xxs font-black text-red-600 uppercase bg-red-100 border border-red-200 px-2.5 py-1 rounded-md">
-                            ⚠️ {r.faltas.length} falta(s) registrada(s): {r.faltas.join(', ')}
+                            ⚠️ {r.faltas.length} falta(s) / pendência(s): {r.faltas.join(', ')}
                           </span>
                         </div>
                       ) : (
                         <div className="mt-2">
                           <span className="text-xxs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md inline-block">
-                            ✅ Nenhuma falta pendente no Safire
+                            ✅ Nenhuma falta pendente registrada
                           </span>
                         </div>
                       )}
                     </div>
 
-                    <button
-                      onClick={() => handleOpenAgendamento(r.aluno, r.turma, r.prof, r.faltas)}
-                      className="bg-[#0b2545] hover:bg-[#123969] text-[#eebd1a] px-5 py-3 rounded-xl font-black text-xs uppercase shadow transition flex items-center gap-2 cursor-pointer w-full md:w-auto justify-center"
-                    >
-                      <CalendarCheck className="w-4 h-4" />
-                      <span>Agendar Reposição / Monitoria</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                      <button
+                        onClick={() => handleOpenAgendamento(r.aluno, r.turma, r.prof, r.faltas)}
+                        className="bg-[#0b2545] hover:bg-[#123969] text-[#eebd1a] px-5 py-3 rounded-xl font-black text-xs uppercase shadow transition flex items-center justify-center gap-2 cursor-pointer flex-1 md:flex-none"
+                      >
+                        <CalendarCheck className="w-4 h-4" />
+                        <span>Agendar Reposição</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -411,29 +587,38 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
             )}
           </div>
 
-          {/* Radar Rápido de Retenção (2+ Faltas) */}
-          <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm text-center space-y-4">
-            <Radio className="w-12 h-12 text-[#e2001a] mx-auto animate-pulse" />
-            <div>
-              <h3 className="font-black text-base uppercase text-[#0b2545]">Radar de Retenção (2+ Faltas)</h3>
-              <p className="text-xs text-slate-400 font-bold uppercase mt-1">
-                Varredura automática para identificar alunos com 2 ou mais faltas registradas no Safire
+          {/* Radar de Retenção (Faltas e Assiduidade) */}
+          <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+            <div className="text-center space-y-2">
+              <Radio className="w-10 h-10 text-[#e2001a] mx-auto animate-pulse" />
+              <h3 className="font-black text-base uppercase text-[#0b2545]">Radar de Retenção & Faltas</h3>
+              <p className="text-xs text-slate-400 font-bold uppercase max-w-xl mx-auto">
+                Varredura automática para identificar alunos com faltas e reposições pendentes (Cores Vermelha e Amarela / Níveis 1, 2 e 3 na avaliação de desempenho)
               </p>
             </div>
 
-            <div className="flex justify-center pt-2">
+            <div className="flex flex-col sm:flex-row justify-center gap-3 pt-2">
               <button
-                onClick={handleStartRadar}
+                onClick={() => handleStartRadar('rapido')}
                 disabled={radarLoading}
-                className="bg-[#e2001a] hover:bg-red-700 text-white px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="bg-[#e2001a] hover:bg-red-700 text-white px-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 flex-1 max-w-sm"
               >
-                {radarLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                <span>{radarLoading ? 'Realizando Varredura...' : 'Iniciar Radar (2+ Faltas)'}</span>
+                {radarLoading && radarType === 'rapido' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                <span>Radar Rápido (2+ Faltas)</span>
+              </button>
+
+              <button
+                onClick={() => handleStartRadar('detalhado')}
+                disabled={radarLoading}
+                className="bg-[#0b2545] hover:bg-[#123969] text-[#eebd1a] px-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 flex-1 max-w-sm"
+              >
+                {radarLoading && radarType === 'detalhado' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ListOrdered className="w-4 h-4" />}
+                <span>Radar Detalhado (Todas as Faltas)</span>
               </button>
             </div>
 
             {radarProgress && (
-              <p className="text-xs font-mono font-bold text-[#0b2545] pt-2">
+              <p className="text-center text-xs font-mono font-bold text-[#0b2545] pt-2">
                 {radarProgress}
               </p>
             )}
@@ -442,17 +627,29 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
           {/* Radar Results List */}
           {radarResults.length > 0 && (
             <div className="space-y-3">
-              <h3 className="font-black text-xs text-slate-400 uppercase tracking-widest">
-                Alunos com 2+ Faltas Identificados ({radarResults.length})
-              </h3>
+              <div className="flex justify-between items-center">
+                <h3 className="font-black text-xs text-slate-400 uppercase tracking-widest">
+                  {radarType === 'rapido' ? 'Alunos com 2+ Faltas / Faltas Recentes' : 'Todos os Alunos com Faltas Registradas'} ({radarResults.length})
+                </h3>
+              </div>
+
               <div className="grid gap-3">
                 {radarResults.map((r, idx) => (
                   <div
                     key={idx}
-                    className="bg-white p-5 rounded-2xl border-l-4 border-red-500 border-t border-r border-b border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-[#0b2545] transition"
+                    className={`bg-white p-5 rounded-2xl border-l-4 ${
+                      r.temDuasFaltas ? 'border-red-500' : 'border-amber-500'
+                    } border-t border-r border-b border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-[#0b2545] transition`}
                   >
                     <div>
-                      <h4 className="font-black text-sm text-[#0b2545] uppercase">{r.aluno}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-black text-sm text-[#0b2545] uppercase">{r.aluno}</h4>
+                        {r.temDuasFaltas && (
+                          <span className="bg-red-600 text-white text-3xs font-black uppercase px-2 py-0.5 rounded-full">
+                            2+ Faltas Críticas
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xxs font-bold text-slate-400 uppercase mt-0.5">
                         Turma: <strong className="text-[#0b2545]">{r.turma}</strong> • Professor: <strong>{r.prof}</strong>
                       </p>
@@ -465,13 +662,15 @@ export default function RetencaoPanel({ session }: RetencaoPanelProps) {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleOpenAgendamento(r.aluno, r.turma, r.prof, r.faltas)}
-                      className="bg-[#0b2545] hover:bg-black text-[#eebd1a] px-6 py-3 rounded-xl font-black text-xs uppercase shadow transition flex items-center gap-2 cursor-pointer w-full md:w-auto justify-center"
-                    >
-                      <CalendarCheck className="w-4 h-4" />
-                      <span>Agendar Reposição</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                      <button
+                        onClick={() => handleOpenAgendamento(r.aluno, r.turma, r.prof, r.faltas)}
+                        className="bg-[#0b2545] hover:bg-black text-[#eebd1a] px-5 py-3 rounded-xl font-black text-xs uppercase shadow transition flex items-center justify-center gap-2 cursor-pointer flex-1 md:flex-none"
+                      >
+                        <CalendarCheck className="w-4 h-4" />
+                        <span>Agendar Reposição</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
