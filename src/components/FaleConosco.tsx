@@ -18,7 +18,7 @@ export default function FaleConosco({ session }: FaleConoscoProps) {
   const [enviado, setEnviado] = useState(false);
 
   // Link do Formspree configurável
-  const FORMSPREE_ENDPOINT = "https://formspree.io/f/operaeducacional";
+  const FORMSPREE_ENDPOINT = "https://formspree.io/f/myeglkwe";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
