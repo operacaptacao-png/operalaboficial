@@ -83,7 +83,7 @@ export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelP
   }, []);
 
   // Extrai as faltas da base de desempenho (perfData)
-  // Cores: 1 = Vermelho, 2 = Laranja, 3 = Amarelo (correspondentes matematicamente a falta / reposição necessária)
+  // Cores: 1 = Vermelho, 2 = Laranja, 3 = Amarelo (correspondentes pedagogicamente a falta / reposição necessária)
   const extractAlunoFaltas = (alunoNome: string, turmaNome: string): { faltas: string[]; temDuasFaltas: boolean } => {
     const norm = normalizeString(alunoNome);
     let notas = perfData[alunoNome] || [];
@@ -101,13 +101,39 @@ export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelP
     const faltas: string[] = [];
     const avaliadas: { idx: number; isFalta: boolean }[] = [];
 
+    const isFaltaScore = (v: number) => v === 1 || v === 2 || v === 3;
+
     for (let i = 0; i < maxLessons; i++) {
       const lesson = notas[i];
       if (lesson) {
-        const asVal = Number(lesson.as);
-        if (asVal > 0) {
-          // Cores Vermelho (1), Laranja (2) e Amarelo (3) são faltas
-          const isFalta = asVal === 1 || asVal === 2 || asVal === 3;
+        let isEvaluated = false;
+        let isFalta = false;
+
+        // Verifica os critérios principais: po, co, pe, ce, as
+        ['po', 'co', 'pe', 'ce', 'as'].forEach((k) => {
+          const v = Number(lesson[k as keyof typeof lesson]) || 0;
+          if (v > 0) {
+            isEvaluated = true;
+            if (isFaltaScore(v)) {
+              isFalta = true;
+            }
+          }
+        });
+
+        // Verifica também critérios de sub-lições (corA_po, corA_co, etc.)
+        ['A', 'B', 'C', 'D'].forEach((sub) => {
+          ['po', 'co', 'pe', 'ce'].forEach((crit) => {
+            const v = Number(lesson[`cor${sub}_${crit}` as keyof typeof lesson]) || 0;
+            if (v > 0) {
+              isEvaluated = true;
+              if (isFaltaScore(v)) {
+                isFalta = true;
+              }
+            }
+          });
+        });
+
+        if (isEvaluated) {
           avaliadas.push({ idx: i, isFalta });
           if (isFalta) {
             faltas.push(`Lesson ${i + 1}`);
@@ -304,6 +330,9 @@ export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelP
     setRadarResults([]);
     setRadarProgress(`Iniciando ${tipo === 'rapido' ? 'Radar Rápido (2+ Faltas)' : 'Radar Detalhado (Todas as Faltas)'}...`);
 
+    // Sincroniza reposições da nuvem antes de iniciar
+    await loadReposicoes();
+
     const allStudents: { aluno: string; turma: string; prof: string }[] = [];
     for (const prof in PERF_MASTER_DB) {
       for (const turma in PERF_MASTER_DB[prof]) {
@@ -313,7 +342,7 @@ export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelP
       }
     }
 
-    // Inclui alunos presentes em perfData
+    // Inclui alunos presentes em perfData que não estão no DB estático
     for (const alunoNuvem in perfData) {
       const jaExiste = allStudents.some((s) => normalizeString(s.aluno) === normalizeString(alunoNuvem));
       if (!jaExiste) {
@@ -323,9 +352,8 @@ export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelP
 
     const found: { aluno: string; turma: string; prof: string; faltas: string[]; temDuasFaltas: boolean }[] = [];
 
-    // 1. Processa alunos da planilha de notas e alunos com faltas
-    // Executa em chunks para alta performance
-    const chunkSize = 15;
+    // Executa em chunks para alta performance e estabilidade
+    const chunkSize = 12;
     for (let i = 0; i < allStudents.length; i += chunkSize) {
       const chunk = allStudents.slice(i, i + chunkSize);
       setRadarProgress(`Analisando alunos ${i + 1} até ${Math.min(i + chunkSize, allStudents.length)} de ${allStudents.length}...`);
@@ -338,30 +366,26 @@ export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelP
           let turmaAtual = st.turma;
           let profAtual = st.prof;
 
-          // Se já tem falta no perfData ou se o cache Safire está pronto
-          const normKey = `safire_${normalizeString(st.aluno)}`;
-          const cachedSafire = localStorage.getItem(normKey);
-          if (cachedSafire) {
-            try {
-              const check = JSON.parse(cachedSafire);
-              if (check && !check.error) {
-                if (check.turma) turmaAtual = check.turma;
-                if (check.professor) profAtual = check.professor;
-                if (check.totalFaltas !== undefined && check.totalFaltas >= 2) has2Plus = true;
-                if (check.quaisFaltou && Array.isArray(check.quaisFaltou)) {
-                  check.quaisFaltou.forEach((f: string) => {
-                    if (!todasFaltas.includes(f)) todasFaltas.push(f);
-                  });
-                }
-                if (check.quaisAgendar && Array.isArray(check.quaisAgendar)) {
-                  check.quaisAgendar.forEach((f: string) => {
-                    if (!todasFaltas.includes(f)) todasFaltas.push(f);
-                  });
-                }
+          // Consulta Safire com cache ou live check
+          try {
+            const check = await checkSafireFaltas(st.aluno, false);
+            if (check && !check.error) {
+              if (check.turma) turmaAtual = check.turma;
+              if (check.professor) profAtual = check.professor;
+              if (check.totalFaltas !== undefined && check.totalFaltas >= 2) has2Plus = true;
+              if (check.quaisFaltou && Array.isArray(check.quaisFaltou)) {
+                check.quaisFaltou.forEach((f: string) => {
+                  if (!todasFaltas.includes(f)) todasFaltas.push(f);
+                });
               }
-            } catch {
-              // ignore
+              if (check.quaisAgendar && Array.isArray(check.quaisAgendar)) {
+                check.quaisAgendar.forEach((f: string) => {
+                  if (!todasFaltas.includes(f)) todasFaltas.push(f);
+                });
+              }
             }
+          } catch {
+            // ignore
           }
 
           if (todasFaltas.length >= 2) {
