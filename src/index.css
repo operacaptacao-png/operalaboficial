@@ -1,110 +1,55 @@
-@import "tailwindcss";
+/* ==================================================== */
+/* CONFIGURAÇÃO DE IMPRESSÃO NATIVA (PDF) E BOLINHAS    */
+/* ==================================================== */
 
-:root {
-  --opera-blue: #0b2545;
-  --opera-red: #e2001a;
-  --opera-yellow: #eebd1a;
-  --bg-light: #f4f7f6;
-  
-  --grade-green: #22c55e;
-  --grade-blue: #3b82f6;
-  --grade-yellow: #eab308;
-  --grade-orange: #f97316;
-  --grade-red: #ef4444;
-  --grade-empty: #f1f5f9;
-
-  --cal-blue: #3b82f6;
-  --cal-red: #ef4444;
-  --cal-gold: #e6b01e;
+.color-dot, .mini-color-dot {
+  border-radius: 50% !important; /* Força bolinha em todo lugar */
 }
-
-body {
-  font-family: 'Montserrat', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: var(--bg-light);
-  color: var(--opera-blue);
-  margin: 0;
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Animations */
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.page-content {
-  animation: slideUp 0.3s ease-out;
-}
-
-/* Custom Dots for performance assessment */
-.color-dot {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 3px solid transparent;
-  transition: all 0.2s;
-  opacity: 0.25;
-  cursor: pointer;
-}
-
-.mini-color-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  transition: all 0.2s;
-  opacity: 0.25;
-  cursor: pointer;
-}
-
-.btn-white { background-color: #ffffff !important; border: 2px solid #cbd5e1 !important; }
-.btn-red { background-color: var(--grade-red) !important; }
-.btn-orange { background-color: var(--grade-orange) !important; }
-.btn-yellow { background-color: var(--grade-yellow) !important; }
-.btn-blue { background-color: var(--grade-blue) !important; }
-.btn-green { background-color: var(--grade-green) !important; }
-
-.color-dot.selected, .mini-color-dot.selected {
-  opacity: 1 !important;
-  border-color: var(--opera-blue) !important;
-  transform: scale(1.25);
-  box-shadow: 0 0 8px rgba(0,0,0,0.3);
-}
-
-/* DESEMPENHO E RELATÓRIO */
-.desempenho-container { background: #ffffff; border: 1px solid #000; padding: 50px; max-width: 1100px; margin: 0 auto; position: relative; overflow: hidden; }
-.watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 600px; opacity: 0.05; pointer-events: none; z-index: 0; }
-.header-desempenho { display: flex; justify-content: space-between; border-bottom: 3px solid var(--opera-blue); padding-bottom: 10px; margin-bottom: 30px; font-weight: 900; position: relative; z-index: 1; text-transform: uppercase; font-size: 1.3rem;}
-.grade-lessons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; flex: 2.5; position: relative; z-index: 1;}
-.lesson-box { border: 1px solid #000; padding: 12px; display: flex; flex-direction: column; }
-.lesson-title { font-weight: 900; font-size: 0.85rem; text-transform: uppercase; text-align: center; border-bottom: 1.5px solid #000; margin-bottom: 10px; padding-bottom: 5px;}
-.criterio-row { display: flex; align-items: stretch; height: 26px; margin-bottom: 2px; }
-.c-label { width: 85px; font-size: 0.45rem; font-weight: 900; display: flex; align-items: center; text-transform: uppercase; line-height: 1.1; color: #000; }
-.c-box { flex: 1; border: 1px solid #000; border-left: none; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-.grade-sidebar { flex: 1; padding-left: 25px; border-left: 1px solid #eee; }
-.pie-chart { width: 180px; height: 180px; border-radius: 50%; border: 3px solid #000; margin: 20px auto 0; }
-.mini-pie { width: 35px; height: 35px; border-radius: 50%; border: 2px solid var(--opera-blue); }
-
-/* IMPRESSÃO & GERAÇÃO DE PDF (CERTIFICADOS E RELATÓRIO) */
-#area-impressao-certificado { display: none; background: white; width: 297mm; }
-.folha-certificado { width: 297mm; min-height: 209mm; height: 209mm; padding: 15mm; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; page-break-after: always; break-after: page; position: relative; overflow: hidden; background: white; }
-.folha-desempenho { width: 297mm; min-height: 209mm; height: 209mm; padding: 15mm; box-sizing: border-box; position: relative; overflow: hidden; background: white; page-break-before: always; break-before: page; }
-.cert-grade-lessons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;}
-.cert-lesson-box { border: 1px solid #000; padding: 12px; display: flex; flex-direction: column; position: relative; z-index: 10;}
-.cert-lesson-title { font-weight: 900; font-size: 0.85rem; text-transform: uppercase; text-align: center; border-bottom: 1.5px solid #000; margin-bottom: 10px; padding-bottom: 5px;}
-.cert-criterio-row { display: flex; align-items: stretch; height: 26px; margin-bottom: 2px; }
-.cert-c-label { width: 85px; font-size: 0.45rem; font-weight: 900; display: flex; align-items: center; text-transform: uppercase; line-height: 1.1; color: #000; }
-.cert-c-box { flex: 1; border: 1px solid #000; border-left: none; }
 
 @media print {
-    @page { size: A4 landscape; margin: 0; }
-    body { background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    header, nav, .floating-menu, .no-print, #perf-step-turmas, #perf-step-alunos, #perf-step-editor { display: none !important; }
-    body:not(.printing-cert) #aba-desempenho { display: block !important; padding: 0; }
-    body:not(.printing-cert) #perf-area-impressao { display: block !important; position: static; width: 100%; margin: 0; }
-    body:not(.printing-cert) .desempenho-container { border: 2px solid #000; width: 100%; max-width: 280mm; box-shadow: none; padding: 20px; margin: 10mm auto; page-break-inside: avoid; zoom: 0.85;}
-    body:not(.printing-cert) .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 600px; opacity: 0.05; pointer-events: none; z-index: 0; }
-    body.printing-cert #aba-desempenho { display: none !important; }
-    body.printing-cert #area-impressao-certificado { display: block !important; }
-}
+  /* Oculta tudo que não for a área de impressão */
+  body * {
+    visibility: hidden;
+  }
+  
+  .print-area, .print-area * {
+    visibility: visible;
+  }
 
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: white;
+  }
+
+  /* Oculta os botões do próprio app na hora de imprimir */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Força a impressora a imprimir as cores de fundo (bolinhas, gráficos) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Configuração para o Certificado Paisagem */
+  .folha-a4.landscape {
+    width: 297mm;
+    height: 210mm;
+    margin: 0;
+    padding: 0;
+    page-break-after: always;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 0; /* Remove margens automáticas da impressora */
+  }
+}
