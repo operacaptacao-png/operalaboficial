@@ -3,792 +3,588 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
-import { UserSession, ReposicaoItem, StudentPerformanceData } from '../types';
-import { PERF_MASTER_DB, HORARIOS_ATIVOS } from '../data/database';
+import React, { useState } from 'react';
+import { UserSession, StudentPerformanceData, StudentPerformanceLesson } from '../types';
+import { PERF_MASTER_DB, mapearTurmaParaCertificado } from '../data/database';
 import { 
-  fetchReposicoes, 
-  checkSafireFaltas, 
-  agendarReposicao, 
-  updateReposicaoStatus, 
+  saveStudentPerformance, 
+  deleteStudentPerformance, 
+  registrarChamadaNuvem, 
   normalizeString 
 } from '../services/api';
 import { 
-  AlertTriangle, 
-  Radio, 
-  Search, 
-  CalendarCheck, 
-  Clock, 
-  Copy, 
-  CheckCircle, 
-  RefreshCw, 
-  Filter, 
-  X, 
-  Check, 
-  Zap, 
-  ListOrdered
+  Search, ClipboardList, Save, Award, Trash2, ArrowLeft, 
+  Check, RefreshCw, Sparkles, AlertCircle, UserCheck, Lock, Download, X
 } from 'lucide-react';
 
-interface RetencaoPanelProps {
+interface DesempenhoLabProps {
   session: UserSession;
-  perfData?: StudentPerformanceData;
+  perfData: StudentPerformanceData;
+  onUpdatePerfData: (newData: StudentPerformanceData) => void;
 }
 
-export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelProps) {
-  const [visao, setVisao] = useState<'pesquisa' | 'gestao'>('pesquisa');
+export default function DesempenhoLab({ session, perfData, onUpdatePerfData }: DesempenhoLabProps) {
+  const isTeacher = session.tipoLoginAtual === 'prof';
+  const isStaff = session.tipoLoginAtual === 'staff';
 
-  // Search state
-  const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<{ aluno: string; turma: string; prof: string; faltas: string[]; temDuasFaltas: boolean }[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [step, setStep] = useState<'turmas' | 'alunos' | 'editor' | 'impressao_relatorio' | 'impressao_cert'>('turmas');
+  const [activeTurma, setActiveTurma] = useState<string>('');
+  const [activeProfOwner, setActiveProfOwner] = useState<string>('');
+  const [activeAluno, setActiveAluno] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'geral' | 'especifico'>('geral');
+  const [relatorioTipo, setRelatorioTipo] = useState<'geral' | 'especifico'>('geral');
 
-  // Radar state
-  const [radarType, setRadarType] = useState<'rapido' | 'detalhado'>('rapido');
-  const [radarResults, setRadarResults] = useState<{ aluno: string; turma: string; prof: string; faltas: string[]; temDuasFaltas: boolean }[]>([]);
-  const [radarLoading, setRadarLoading] = useState(false);
-  const [radarProgress, setRadarProgress] = useState('');
-
-  // Reposições Gestão state
-  const [reposicoes, setReposicoes] = useState<ReposicaoItem[]>([]);
-  const [gestaoFilter, setGestaoFilter] = useState<string>('Pendente');
-  const [gestaoSearch, setGestaoSearch] = useState('');
-  const [gestaoLoading, setGestaoLoading] = useState(false);
-
-  // Modal Agendamento state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalStep, setModalStep] = useState<'form' | 'copy'>('form');
-  const [selectedStudentInfo, setSelectedStudentInfo] = useState<{ aluno: string; turma: string; prof: string; stringLicoes: string } | null>(null);
-
-  const [tipoAula, setTipoAula] = useState<'Reposição' | 'Monitoria'>('Reposição');
-  const [licaoDesejada, setLicaoDesejada] = useState('');
-  const [profSub, setProfSub] = useState('');
-  const [modalidade, setModalidade] = useState<'Online' | 'Presencial'>('Online');
-  const [dataDesejada, setDataDesejada] = useState('');
-  const [horaDesejada, setHoraDesejada] = useState('');
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [savingAgendamento, setSavingAgendamento] = useState(false);
-  const [textoWpp, setTextoWpp] = useState('');
-  const [copied, setCopied] = useState(false);
-
-  const loadReposicoes = async () => {
-    setGestaoLoading(true);
-    const data = await fetchReposicoes();
-    setReposicoes(data.reverse());
-    setGestaoLoading(false);
-  };
-
-  useEffect(() => {
-    loadReposicoes();
-  }, []);
-
-  // Extrai as faltas da base de desempenho (perfData)
-  // Cores: 1 = Vermelho, 2 = Laranja, 3 = Amarelo (correspondentes matematicamente a falta / reposição necessária)
-  const extractAlunoFaltas = (alunoNome: string, turmaNome: string): { faltas: string[]; temDuasFaltas: boolean } => {
-    const norm = normalizeString(alunoNome);
-    let notas = perfData[alunoNome] || [];
-    if (!notas || notas.length === 0) {
-      const matchKey = Object.keys(perfData).find(
-        (k) => normalizeString(k) === norm || normalizeString(k).includes(norm) || norm.includes(normalizeString(k))
-      );
-      if (matchKey) {
-        notas = perfData[matchKey];
-      }
-    }
-
-    const isEspanhol = turmaNome.toUpperCase().startsWith('ESP');
-    const maxLessons = isEspanhol ? 5 : 8;
-    const faltas: string[] = [];
-    const avaliadas: { idx: number; isFalta: boolean }[] = [];
-
-    for (let i = 0; i < maxLessons; i++) {
-      const lesson = notas[i];
-      if (lesson) {
-        const asVal = Number(lesson.as);
-        if (asVal > 0) {
-          // Cores Vermelho (1), Laranja (2) e Amarelo (3) são faltas
-          const isFalta = asVal === 1 || asVal === 2 || asVal === 3;
-          avaliadas.push({ idx: i, isFalta });
-          if (isFalta) {
-            faltas.push(`Lesson ${i + 1}`);
-          }
-        }
-      }
-    }
-
-    let temDuasFaltas = faltas.length >= 2;
-    if (avaliadas.length >= 2) {
-      const ult = avaliadas[avaliadas.length - 1];
-      const pen = avaliadas[avaliadas.length - 2];
-      if (ult.isFalta && pen.isFalta) {
-        temDuasFaltas = true;
-      }
-    }
-
-    return { faltas, temDuasFaltas };
-  };
-
-  // Time conversion helper
-  const timeToMins = (t: string) => {
-    const p = t.split(':');
-    return parseInt(p[0]) * 60 + parseInt(p[1]);
-  };
-
-  // Atualizar horários disponíveis
-  useEffect(() => {
-    if (!dataDesejada || !profSub) {
-      setAvailableSlots([]);
-      setHoraDesejada('');
-      return;
-    }
-
-    const dateObj = new Date(dataDesejada + 'T00:00:00');
-    const diaSemana = dateObj.getDay();
-    const duracaoMinutos = tipoAula === 'Monitoria' ? 30 : 60;
-    const dataFormatadaBr = dataDesejada.split('-').reverse().join('/');
-
-    let faixas: { s: string; e: string; mod?: string }[] = [];
-    if (profSub === 'PABLO' || profSub === 'JOELMA') {
-      faixas = [{ s: '08:00', e: '20:00' }];
-    } else if (HORARIOS_ATIVOS[profSub] && HORARIOS_ATIVOS[profSub][diaSemana]) {
-      faixas = HORARIOS_ATIVOS[profSub][diaSemana];
-    } else {
-      setAvailableSlots([]);
-      setHoraDesejada('');
-      return;
-    }
-
-    const slotsGerados: string[] = [];
-    faixas.forEach((faixa) => {
-      if (faixa.mod && faixa.mod !== modalidade) return;
-      const minStart = timeToMins(faixa.s);
-      const minEnd = timeToMins(faixa.e);
-      for (let m = minStart; m <= minEnd - duracaoMinutos; m += duracaoMinutos) {
-        const h = Math.floor(m / 60).toString().padStart(2, '0');
-        const mm = (m % 60).toString().padStart(2, '0');
-        slotsGerados.push(`${h}:${mm}`);
-      }
-    });
-
-    const validSlots = slotsGerados.filter((slot) => {
-      const slotStart = timeToMins(slot);
-      const slotEnd = slotStart + duracaoMinutos;
-
-      let isOccupied = false;
-      reposicoes.forEach((rep) => {
-        if (rep.status === 'Cancelado') return;
-        if (rep.profSub === profSub && rep.data === dataFormatadaBr) {
-          const repStart = timeToMins(rep.hora);
-          const isMon = rep.licao.includes('Monitoria');
-          const repEnd = repStart + (isMon ? 30 : 60);
-
-          if (slotStart < repEnd && slotEnd > repStart) {
-            isOccupied = true;
-          }
-        }
-      });
-      return !isOccupied;
-    });
-
-    setAvailableSlots(validSlots);
-    if (validSlots.length > 0) {
-      setHoraDesejada(validSlots[0]);
-    } else {
-      setHoraDesejada('');
-    }
-  }, [dataDesejada, profSub, tipoAula, modalidade, reposicoes]);
-
-  // Pesquisa individual Safire + Performance
-  const handleBuscarAluno = async () => {
-    if (!searchTerm.trim()) return;
-    setSearchLoading(true);
-    setSearchResults([]);
-    setSearched(true);
-
-    const term = normalizeString(searchTerm);
-    const matches: { aluno: string; turma: string; prof: string }[] = [];
-
-    for (const prof in PERF_MASTER_DB) {
-      for (const turma in PERF_MASTER_DB[prof]) {
-        for (const aluno of PERF_MASTER_DB[prof][turma]) {
-          if (normalizeString(aluno).includes(term)) {
-            matches.push({ aluno, turma, prof });
-          }
-        }
-      }
-    }
-
-    for (const alunoNuvem in perfData) {
-      if (normalizeString(alunoNuvem).includes(term)) {
-        const jaExiste = matches.some((m) => normalizeString(m.aluno) === normalizeString(alunoNuvem));
-        if (!jaExiste) {
-          matches.push({ aluno: alunoNuvem, turma: 'LAB', prof: 'STAFF' });
-        }
-      }
-    }
-
-    // Se não encontrou no DB local ou para garantir pesquisa direta no Safire
-    if (matches.length === 0) {
-      try {
-        const directSafire = await checkSafireFaltas(searchTerm, true);
-        if (!directSafire.error && directSafire.aluno) {
-          matches.push({
-            aluno: directSafire.aluno,
-            turma: directSafire.turma || 'Turma Safire',
-            prof: directSafire.professor || 'STAFF'
-          });
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    const results = await Promise.all(
-      matches.map(async (m) => {
-        const perfInfo = extractAlunoFaltas(m.aluno, m.turma);
-        let todasFaltas = [...perfInfo.faltas];
-        let turmaAtual = m.turma;
-        let profAtual = m.prof;
-        let has2Plus = perfInfo.temDuasFaltas;
-
-        try {
-          const check = await checkSafireFaltas(m.aluno);
-          if (!check.error) {
-            if (check.turma) turmaAtual = check.turma;
-            if (check.professor) profAtual = check.professor;
-            if (check.totalFaltas !== undefined && check.totalFaltas >= 2) {
-              has2Plus = true;
-            }
-
-            if (check.quaisFaltou && Array.isArray(check.quaisFaltou)) {
-              check.quaisFaltou.forEach((f) => {
-                if (!todasFaltas.includes(f)) {
-                  todasFaltas.push(f);
-                }
-              });
-            }
-            if (check.quaisAgendar && Array.isArray(check.quaisAgendar)) {
-              check.quaisAgendar.forEach((f) => {
-                if (!todasFaltas.includes(f)) {
-                  todasFaltas.push(f);
-                }
-              });
-            }
-          }
-        } catch {
-          // ignore
-        }
-
-        if (todasFaltas.length >= 2) {
-          has2Plus = true;
-        }
-
-        return {
-          aluno: m.aluno,
-          turma: turmaAtual,
-          prof: profAtual,
-          faltas: todasFaltas,
-          temDuasFaltas: has2Plus
-        };
-      })
-    );
-
-    setSearchResults(results);
-    setSearchLoading(false);
-  };
-
-  // Radar batch scan para alunos com faltas cruzando Planilha + Safire
-  const handleStartRadar = async (tipo: 'rapido' | 'detalhado') => {
-    setRadarType(tipo);
-    setRadarLoading(true);
-    setRadarResults([]);
-    setRadarProgress(`Iniciando ${tipo === 'rapido' ? 'Radar Rápido (2+ Faltas)' : 'Radar Detalhado (Todas as Faltas)'}...`);
-
-    const allStudents: { aluno: string; turma: string; prof: string }[] = [];
-    for (const prof in PERF_MASTER_DB) {
-      for (const turma in PERF_MASTER_DB[prof]) {
-        for (const aluno of PERF_MASTER_DB[prof][turma]) {
-          allStudents.push({ aluno, turma, prof });
-        }
-      }
-    }
-
-    // Inclui alunos presentes em perfData
-    for (const alunoNuvem in perfData) {
-      const jaExiste = allStudents.some((s) => normalizeString(s.aluno) === normalizeString(alunoNuvem));
-      if (!jaExiste) {
-        allStudents.push({ aluno: alunoNuvem, turma: 'LAB', prof: 'STAFF' });
-      }
-    }
-
-    const found: { aluno: string; turma: string; prof: string; faltas: string[]; temDuasFaltas: boolean }[] = [];
-
-    // 1. Processa alunos da planilha de notas e alunos com faltas
-    // Executa em chunks para alta performance
-    const chunkSize = 15;
-    for (let i = 0; i < allStudents.length; i += chunkSize) {
-      const chunk = allStudents.slice(i, i + chunkSize);
-      setRadarProgress(`Analisando alunos ${i + 1} até ${Math.min(i + chunkSize, allStudents.length)} de ${allStudents.length}...`);
-
-      const chunkResults = await Promise.all(
-        chunk.map(async (st) => {
-          const perfInfo = extractAlunoFaltas(st.aluno, st.turma);
-          let todasFaltas = [...perfInfo.faltas];
-          let has2Plus = perfInfo.temDuasFaltas;
-          let turmaAtual = st.turma;
-          let profAtual = st.prof;
-
-          // Se já tem falta no perfData ou se o cache Safire está pronto
-          const normKey = `safire_${normalizeString(st.aluno)}`;
-          const cachedSafire = localStorage.getItem(normKey);
-          if (cachedSafire) {
-            try {
-              const check = JSON.parse(cachedSafire);
-              if (check && !check.error) {
-                if (check.turma) turmaAtual = check.turma;
-                if (check.professor) profAtual = check.professor;
-                if (check.totalFaltas !== undefined && check.totalFaltas >= 2) has2Plus = true;
-                if (check.quaisFaltou && Array.isArray(check.quaisFaltou)) {
-                  check.quaisFaltou.forEach((f: string) => {
-                    if (!todasFaltas.includes(f)) todasFaltas.push(f);
-                  });
-                }
-                if (check.quaisAgendar && Array.isArray(check.quaisAgendar)) {
-                  check.quaisAgendar.forEach((f: string) => {
-                    if (!todasFaltas.includes(f)) todasFaltas.push(f);
-                  });
-                }
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          if (todasFaltas.length >= 2) {
-            has2Plus = true;
-          }
-
-          const atende = tipo === 'rapido' ? has2Plus : todasFaltas.length > 0;
-          if (atende) {
-            return {
-              aluno: st.aluno,
-              turma: turmaAtual,
-              prof: profAtual,
-              faltas: todasFaltas,
-              temDuasFaltas: has2Plus
-            };
-          }
-          return null;
-        })
-      );
-
-      chunkResults.forEach((res) => {
-        if (res && !found.some((f) => normalizeString(f.aluno) === normalizeString(res.aluno))) {
-          found.push(res);
-        }
-      });
-    }
-
-    setRadarResults([...found]);
-    setRadarProgress(`Varredura concluída! ${found.length} aluno(s) identificado(s) com ${tipo === 'rapido' ? '2+ faltas ou faltas críticas' : 'faltas registradas'}.`);
-    setRadarLoading(false);
-  };
-
-  // Open modal
-  const handleOpenAgendamento = (aluno: string, turma: string, prof: string, faltas: string[]) => {
-    setSelectedStudentInfo({ aluno, turma, prof, stringLicoes: faltas.join(', ') });
-    setTipoAula('Reposição');
-    setLicaoDesejada(faltas[0] || 'Lesson 1A');
-    setProfSub('EDIMO');
-    setModalidade('Online');
-    setDataDesejada('');
-    setHoraDesejada('');
-    setModalStep('form');
-    setModalOpen(true);
-  };
-
-  const handleSalvarAgendamento = async () => {
-    if (!selectedStudentInfo || !dataDesejada || !horaDesejada || !licaoDesejada || !profSub) {
-      alert('Por favor, preencha todos os campos e selecione um horário válido.');
-      return;
-    }
-
-    setSavingAgendamento(true);
-    await agendarReposicao({
-      tipo: tipoAula,
-      aluno: selectedStudentInfo.aluno,
-      turma: selectedStudentInfo.turma,
-      profOriginal: selectedStudentInfo.prof,
-      profSub,
-      licao: licaoDesejada,
-      modalidade,
-      dataRep: dataDesejada,
-      horaRep: horaDesejada,
-      staff: session.nomeDisplay || 'Staff'
-    });
-    setSavingAgendamento(false);
-
-    const partesData = dataDesejada.split('-');
-    const dataBr = `${partesData[2]}/${partesData[1]}/${partesData[0]}`;
-    const texto = `📌 *AGENDAMENTO CONFIRMADO - OPERALAB*\n\n👤 *Aluno:* ${selectedStudentInfo.aluno}\n⚙️ *Tipo:* ${tipoAula}\n📚 *Lição a Repor:* ${licaoDesejada}\n📅 *Data:* ${dataBr}\n⏰ *Horário:* ${horaDesejada}\n🧑‍🏫 *Prof. Substituto:* ${profSub}\n💻 *Modalidade:* ${modalidade}\n\n*Atenção:* Em caso de dúvidas, fale conosco!`;
-
-    setTextoWpp(texto);
-    setModalStep('copy');
-    loadReposicoes();
-  };
-
-  const handleCopyWpp = () => {
-    navigator.clipboard.writeText(textoWpp).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    });
-  };
-
-  const handleCancelarReposicao = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja cancelar este agendamento?')) return;
-    await updateReposicaoStatus(id, 'Cancelado', session.nomeDisplay || 'Staff');
-    loadReposicoes();
-  };
-
-  const filteredReposicoes = reposicoes.filter((r) => {
-    const matchStatus = gestaoFilter === 'Todos' || r.status === gestaoFilter;
-    const matchSearch = !gestaoSearch || normalizeString(r.aluno).includes(normalizeString(gestaoSearch));
-    return matchStatus && matchSearch;
+  // Controle de Abas Discretas para o Staff (Sem o Accordion)
+  const [selectedProfStaff, setSelectedProfStaff] = useState<string>(() => {
+    if (isTeacher) return session.userLogado;
+    const firstProf = Object.keys(PERF_MASTER_DB)[0];
+    return firstProf || '';
   });
 
-  return (
-    <div className="page-content max-w-6xl mx-auto p-4 md:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b-2 border-slate-200 pb-6 gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-[#e2001a] flex items-center gap-3">
-            <AlertTriangle className="w-8 h-8 text-[#e2001a]" />
-            <span>Painel de Retenção</span>
-          </h1>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
-            Monitoramento de Faltas, Recuperação de Alunos e Agendamentos
-          </p>
+  // Diário de Classe (Chamada)
+  const [modalChamadaOpen, setModalChamadaOpen] = useState(false);
+  const [chamadaData, setChamadaData] = useState(new Date().toISOString().split('T')[0]);
+  const [chamadaLicao, setChamadaLicao] = useState('');
+  const [chamadaPresencas, setChamadaPresencas] = useState<Record<string, boolean>>({});
+  const [chamadaLoading, setChamadaLoading] = useState(false);
+
+  // Sync state
+  const [saving, setSaving] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  // Notas e HTML para impressão
+  const [currentNotas, setCurrentNotas] = useState<StudentPerformanceLesson[]>([]);
+  const [htmlRelatorio, setHtmlRelatorio] = useState('');
+  const [htmlCertFrente, setHtmlCertFrente] = useState('');
+  const [htmlCertVerso, setHtmlCertVerso] = useState('');
+
+  const getAlunosDaTurma = (turma: string, prof: string) => {
+    if (PERF_MASTER_DB[prof] && PERF_MASTER_DB[prof][turma]) return PERF_MASTER_DB[prof][turma];
+    for (const p in PERF_MASTER_DB) {
+      if (PERF_MASTER_DB[p][turma]) return PERF_MASTER_DB[p][turma];
+    }
+    return [];
+  };
+
+  const calculateStudentPie = (aluno: string, turma: string) => {
+    const notas = perfData[aluno] || [];
+    const isEspanhol = turma.toUpperCase().startsWith('ESP');
+    const maxL = isEspanhol ? 5 : 8;
+    const counts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let validos = 0;
+
+    for (let i = 0; i < maxL; i++) {
+      const lesson = notas[i] || {};
+      ['po', 'co', 'pe', 'ce'].forEach((k) => {
+        const v = Number(lesson[k as keyof typeof lesson]);
+        if (v >= 1 && v <= 5) { counts[v]++; validos++; }
+      });
+    }
+
+    if (validos === 0) return 'conic-gradient(#cbd5e1 0% 100%)';
+    const p1 = (counts[1] / validos) * 100;
+    const p2 = (counts[2] / validos) * 100;
+    const p3 = (counts[3] / validos) * 100;
+    const p4 = (counts[4] / validos) * 100;
+
+    return `conic-gradient(#ef4444 0% ${p1}%, #f97316 ${p1}% ${p1 + p2}%, #eab308 ${p1 + p2}% ${p1 + p2 + p3}%, #3b82f6 ${p1 + p2 + p3}% ${p1 + p2 + p3 + p4}%, #22c55e ${p1 + p2 + p3 + p4}% 100%)`;
+  };
+
+  const handleOpenTurma = (turma: string, prof: string) => {
+    setActiveTurma(turma);
+    setActiveProfOwner(prof);
+    setStep('alunos');
+  };
+
+  const handleOpenEditor = (aluno: string) => {
+    setActiveAluno(aluno);
+    const existing = perfData[aluno];
+    const initialNotas: StudentPerformanceLesson[] = existing && existing.length > 0
+      ? JSON.parse(JSON.stringify(existing))
+      : Array(8).fill(null).map(() => ({ po: 0, co: 0, pe: 0, ce: 0, as: 0, obsA: '', obsB: '', obsC: '', obsD: '' }));
+    
+    setCurrentNotas(initialNotas);
+    setStep('editor');
+    setActiveTab('geral');
+  };
+
+  const setNotaCrit = (lessonIdx: number, crit: string, val: number) => {
+    if (!isTeacher) return;
+    setCurrentNotas((prev) => {
+      const updated = [...prev];
+      if (!updated[lessonIdx]) updated[lessonIdx] = { po: 0, co: 0, pe: 0, ce: 0 };
+      updated[lessonIdx] = { ...updated[lessonIdx], [crit]: val };
+      return updated;
+    });
+  };
+
+  const setNotaSubCrit = (lessonIdx: number, sub: string, crit: string, val: number) => {
+    if (!isTeacher) return;
+    const key = `cor${sub}_${crit}`;
+    setCurrentNotas((prev) => {
+      const updated = [...prev];
+      if (!updated[lessonIdx]) updated[lessonIdx] = {};
+      updated[lessonIdx] = { ...updated[lessonIdx], [key]: val };
+      return updated;
+    });
+  };
+
+  const setNotaObs = (lessonIdx: number, sub: string, text: string) => {
+    if (!isTeacher) return;
+    const key = `obs${sub}`;
+    setCurrentNotas((prev) => {
+      const updated = [...prev];
+      if (!updated[lessonIdx]) updated[lessonIdx] = {};
+      updated[lessonIdx] = { ...updated[lessonIdx], [key]: text };
+      return updated;
+    });
+  };
+
+  const handleSalvarNotas = async () => {
+    if (!isTeacher) return;
+    setSaving(true);
+    setSyncStatus('Salvando na nuvem...');
+    const updatedAll = { ...perfData, [activeAluno]: currentNotas };
+    onUpdatePerfData(updatedAll);
+
+    let profToSave = activeProfOwner || session.userLogado;
+    const success = await saveStudentPerformance(activeAluno, activeTurma, profToSave, currentNotas);
+    setSaving(false);
+    setSyncStatus(success ? 'Avaliação salva com sucesso!' : 'Salvo localmente. Verifique sua conexão.');
+    setTimeout(() => setSyncStatus(null), 3000);
+  };
+
+  const handleDeleteAluno = async () => {
+    if (!window.confirm(`Tem certeza que deseja excluir permanentemente o registro de ${activeAluno}?`)) return;
+    setSaving(true);
+    await deleteStudentPerformance(activeAluno);
+    const updated = { ...perfData };
+    delete updated[activeAluno];
+    onUpdatePerfData(updated);
+    setSaving(false);
+    setStep('alunos');
+  };
+
+  const handleOpenChamadaModal = () => {
+    setChamadaData(new Date().toISOString().split('T')[0]);
+    setChamadaLicao('');
+    const alunos = getAlunosDaTurma(activeTurma, activeProfOwner || session.userLogado);
+    const initialPresencas: Record<string, boolean> = {};
+    alunos.forEach((a) => { initialPresencas[a] = true; });
+    setChamadaPresencas(initialPresencas);
+    setModalChamadaOpen(true);
+  };
+
+  const handleEnviarChamada = async () => {
+    if (!chamadaLicao) { alert('Por favor, selecione qual lição foi ministrada.'); return; }
+    setChamadaLoading(true);
+    const alunos = getAlunosDaTurma(activeTurma, activeProfOwner || session.userLogado);
+    const dados = alunos.map((a) => ({ nome: a, status: chamadaPresencas[a] ? 'Presente' : 'Faltou' }));
+    const prof = activeProfOwner || session.userLogado;
+    const success = await registrarChamadaNuvem(prof, activeTurma, chamadaData, chamadaLicao, dados);
+    setChamadaLoading(false);
+    alert(success ? 'Presenças registradas com sucesso!' : 'Gravadas localmente.');
+    setModalChamadaOpen(false);
+  };
+
+  const isEspanhol = activeTurma.toUpperCase().startsWith('ESP');
+  const maxL = isEspanhol ? 5 : 8;
+  const isCrianca = activeTurma.toUpperCase().startsWith('EXPLORES') || activeTurma.toUpperCase().startsWith('DISCO');
+
+  let preenchidas = 0;
+  for (let i = 0; i < maxL; i++) {
+    const l = currentNotas[i];
+    if (l && (Number(l.po) > 0 || Number(l.co) > 0 || Number(l.pe) > 0 || Number(l.ce) > 0 || (l.obsA && l.obsA.length > 0))) preenchidas++;
+  }
+  const percentComplete = Math.round((preenchidas / maxL) * 100);
+
+  const searchResults: { aluno: string; turma: string; prof: string }[] = [];
+  if (searchTerm.trim().length > 1) {
+    const term = normalizeString(searchTerm);
+    for (const prof in PERF_MASTER_DB) {
+      if (isTeacher && prof !== session.userLogado) continue;
+      for (const turma in PERF_MASTER_DB[prof]) {
+        for (const aluno of PERF_MASTER_DB[prof][turma]) {
+          if (normalizeString(aluno).includes(term)) searchResults.push({ aluno, turma, prof });
+        }
+      }
+    }
+  }
+
+  // ============================================
+  // GERAÇÃO DE HTML: CERTIFICADOS E RELATÓRIOS
+  // ============================================
+
+  const gerarTextoCertificadoOficial = (dadosCurso: any, nomeAluno: string, tipo: string) => {
+    const dataEmissao = new Date().toLocaleDateString('pt-BR');
+
+    // 1. FORÇAR O IDIOMA CORRETO PELA SIGLA DA TURMA (FR, ESP, EN)
+    let idiomaTurma = 'en';
+    const sigla = activeTurma.toUpperCase();
+    if (sigla.startsWith('FR')) idiomaTurma = 'fr';
+    else if (sigla.startsWith('ESP')) idiomaTurma = 'es';
+    else if (dadosCurso && dadosCurso.idioma) idiomaTurma = dadosCurso.idioma;
+
+    const traducoes: any = {
+      'en': { titulo: "CERTIFICATE OF ATTENDANCE AND PROGRESS*", awarded: "Awarded to", texto: `This is to certify that the above student has successfully completed a ${dadosCurso?.horas || '90'}-hour-long<br>General English Course (Standard 2 hours per week) at an (CEFR ${dadosCurso?.nivel || 'A1'}) at OPERA<br>IDIOMAS.`, dataLabel: "Date of issue", rodape: "This certificate is valid for two years" },
+      'es': { titulo: "CERTIFICADO DE ASISTENCIA Y PROGRESO*", awarded: "Otorgado a", texto: `Por la presente se certifica que el estudiante mencionado anteriormente ha completado con éxito un ${dadosCurso?.curso || 'Curso de Español'}<br>de ${dadosCurso?.horas || '90'} horas (Estándar 2 horas por semana) en un nivel (MCER ${dadosCurso?.nivel || 'A1'}) en OPERA<br>IDIOMAS.`, dataLabel: "Fecha de emisión", rodape: "Este certificado es válido por dos años" },
+      'fr': { titulo: "CERTIFICAT DE PRÉSENCE ET DE PROGRÈS*", awarded: "Décerné à", texto: `Ceci certifie que l'étudiant ci-dessus a terminé avec succès un ${dadosCurso?.curso || 'Cours de Français'}<br>de ${dadosCurso?.horas || '90'} heures (Standard 2 heures par semaine) au niveau (CECRL ${dadosCurso?.nivel || 'A1'}) à OPERA<br>IDIOMAS.`, dataLabel: "Date d'émission", rodape: "Ce certificat est valable deux ans" }
+    };
+    const t = traducoes[idiomaTurma];
+
+    // 2. TIMBRADO (SÓ TEXTO) VS DIGITAL (COM MARCA D'ÁGUA E ASSINATURA)
+    let htmlElementosDigitais = '';
+    let marginTopo = '80px'; 
+    
+    if (tipo === 'digital') {
+      marginTopo = '140px';
+      htmlElementosDigitais = `
+        <img src="https://i.postimg.cc/MGGygYGg/logo_opera_png.png" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; opacity: 0.05; z-index: 0; pointer-events: none; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+        <div style="position: absolute; top: 40px; left: 50%; transform: translateX(-50%); z-index: 20;">
+          <img src="https://i.postimg.cc/dQx0d4bk/logo-do-opera-com-nome.png" style="width: 190px;">
+        </div>
+      `;
+    }
+
+    return `
+      <div style="width: 297mm; height: 200mm; position: relative; overflow: hidden; background: #fff; margin: 0 auto; page-break-after: always; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: sans-serif;">
+        ${htmlElementosDigitais}
+        
+        <div style="position: relative; z-index: 10; width: 100%; display: flex; flex-direction: column; align-items: center; margin-top: ${marginTopo};">
+          <div style="font-size: 26px; font-weight: 900; text-transform: uppercase; color: #0b2545; margin-bottom: 20px;">${t.titulo}</div>
+          <div style="font-size: 18px; font-weight: 400; color: #555; margin-bottom: 10px; font-style: italic;">${t.awarded}</div>
+          <div style="font-size: 40px; font-weight: 900; color: #000; text-transform: uppercase; margin-bottom: 30px;">${nomeAluno}</div>
+          <div style="font-size: 18px; font-weight: 400; color: #333; line-height: 1.6; margin-bottom: 50px;">${t.texto}</div>
+          
+          <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 20px;">
+            ${tipo === 'digital' ? '<img src="https://i.postimg.cc/fWcV4xpx/Assinatura-em-png.png" style="height: 90px; object-fit: contain; margin-bottom: -20px; position: relative; z-index: 10; -webkit-print-color-adjust: exact; print-color-adjust: exact;">' : '<div style="height: 70px;"></div>'}
+            <div style="width: 320px; border-top: 2px solid #000; margin-bottom: 5px;"></div>
+            <div style="font-size: 16px; font-weight: 700; color: #000;">Adriana Silva Almeida Borges</div>
+            <div style="font-size: 14px; font-weight: 400; color: #555;">General Director</div>
+          </div>
+          
+          <div style="font-size: 16px; font-weight: 900; color: #000; margin-bottom: 20px;">${t.dataLabel}: ${dataEmissao}</div>
+          <div style="font-size: 14px; font-weight: 400; color: #666; font-style: italic;">${t.rodape}</div>
         </div>
 
-        {/* View Switcher */}
-        <div className="flex bg-slate-200 p-1 rounded-xl border border-slate-300">
-          <button
-            onClick={() => setVisao('pesquisa')}
-            className={`px-5 py-2.5 rounded-lg text-xs font-black uppercase transition flex items-center gap-2 cursor-pointer ${
-              visao === 'pesquisa' ? 'bg-[#0b2545] text-[#eebd1a] shadow' : 'text-slate-600 hover:text-black'
-            }`}
-          >
-            <Search className="w-4 h-4" />
-            <span>Pesquisa por Nome</span>
-          </button>
-          <button
-            onClick={() => { setVisao('gestao'); loadReposicoes(); }}
-            className={`px-5 py-2.5 rounded-lg text-xs font-black uppercase transition flex items-center gap-2 cursor-pointer ${
-              visao === 'gestao' ? 'bg-[#0b2545] text-[#eebd1a] shadow' : 'text-slate-600 hover:text-black'
-            }`}
-          >
-            <CalendarCheck className="w-4 h-4" />
-            <span>Reposições Agendadas</span>
-          </button>
+        ${tipo === 'digital' ? `
+        <div style="position: absolute; bottom: 40px; right: 40px; text-align: right; font-size: 12px; font-weight: 700; color: #333; z-index: 20;">
+          OPERA Idiomas Ltda.<br>Rua Arnold Silva, 55 Kalilandia<br>Feira de Santana-Estado da Bahia<br>CNPJ: 48.043.598/0001
+        </div>` : ''}
+      </div>
+    `;
+  };
+
+  const gerarHtmlDesempenhoOficial = (nome: string, turma: string, tipo: string) => {
+    let gridH = '';
+    const dbNotasCloud = { ...perfData, [activeAluno]: currentNotas };
+
+    for(let i=0; i<maxL; i++) {
+      let l = dbNotasCloud[nome] && dbNotasCloud[nome][i] ? dbNotasCloud[nome][i] : {po:0, co:0, pe:0, ce:0}; 
+      gridH += `
+      <div style="border: 1px solid #ccc; padding: 10px; border-radius: 8px;">
+        <div style="font-weight: 900; font-size: 14px; border-bottom: 1px solid #ccc; margin-bottom: 8px; padding-bottom: 4px;">Lesson ${i+1}</div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          ${['po','co','pe','ce'].map(k => {
+            let v = Number(l[k as keyof typeof l]) || 0;
+            let color = v==1?'#ef4444':v==2?'#f97316':v==3?'#eab308':v==4?'#3b82f6':'#22c55e';
+            return `<div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:10px; font-weight:bold; color:#555; text-transform:uppercase;">${k=='po'?'P. Oral':k=='co'?'C. Oral':k=='pe'?'P. Escr':k=='ce'?'C. Escr':''}</div>
+              <div style="background-color:${v==0?'#fff':color}; width: 14px; height: 14px; border-radius: 50%; border: 1px solid ${v==0?'#ccc':'#000'}; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+
+    return `
+      <div style="width: 297mm; height: 200mm; position: relative; overflow: hidden; background: #fff; margin: 0 auto; padding: 40px; box-sizing: border-box; font-family: sans-serif;">
+        ${tipo === 'digital' ? `<img src="https://i.postimg.cc/MGGygYGg/logo_opera_png.png" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 600px; opacity: 0.05; z-index: 0; pointer-events: none; -webkit-print-color-adjust: exact; print-color-adjust: exact;">` : ''}
+        
+        <div style="position: relative; z-index: 10; border: 2px solid #000; padding: 30px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #0b2545; padding-bottom: 10px; margin-bottom: 20px;">
+            ${tipo === 'digital' ? `<img src="https://i.postimg.cc/MGGygYGg/logo-opera-png.png" style="height: 40px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">` : `<div style="height: 40px;"></div>`}
+            <div style="text-align: right;"><div style="color: #0b2545; font-weight: 900; font-size: 18px;">RELATÓRIO DE DESEMPENHO</div><div style="font-size: 14px; color: #555; font-weight:bold;">TURMA: ${turma}</div></div>
+          </div>
+          
+          <div style="display: flex; gap: 30px; flex: 1;">
+            <div style="flex: 3; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-content: start;">${gridH}</div>
+            
+            <div style="flex: 1; padding-left: 20px; border-left: 2px solid #eee;">
+              <div style="font-weight: 900; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 5px;">Assessment Index</div>
+              <div style="font-size: 11px; font-weight: 900; margin-bottom: 8px; display:flex; align-items:center; gap:6px;"><div style="width:12px; height:12px; border-radius:50%; background:#22c55e; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Supera o esperado</div>
+              <div style="font-size: 11px; font-weight: 900; margin-bottom: 8px; display:flex; align-items:center; gap:6px;"><div style="width:12px; height:12px; border-radius:50%; background:#3b82f6; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Atende ao esperado</div>
+              <div style="font-size: 11px; font-weight: 900; margin-bottom: 8px; display:flex; align-items:center; gap:6px;"><div style="width:12px; height:12px; border-radius:50%; background:#eab308; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Em desenvolvimento</div>
+              <div style="font-size: 11px; font-weight: 900; margin-bottom: 8px; display:flex; align-items:center; gap:6px;"><div style="width:12px; height:12px; border-radius:50%; background:#f97316; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Nível básico</div>
+              <div style="font-size: 11px; font-weight: 900; margin-bottom: 8px; display:flex; align-items:center; gap:6px;"><div style="width:12px; height:12px; border-radius:50%; background:#ef4444; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Não alcançado</div>
+            </div>
+          </div>
+          
+          <div style="margin-top:20px; font-weight:900; font-size:20px; text-transform:uppercase; border-top:3px solid #000; padding-top:10px;">STUDENT: ${nome}</div>
         </div>
       </div>
+    `;
+  };
 
-      {/* VISÃO 1: PESQUISA POR NOME */}
-      {visao === 'pesquisa' && (
-        <div className="space-y-6">
-          {/* Caixa de Pesquisa Individual */}
-          <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center gap-2.5">
-              <Search className="w-5 h-5 text-[#0b2545]" />
-              <div>
-                <h3 className="font-black text-sm text-[#0b2545] uppercase tracking-wider">
-                  Pesquisa de Aluno no Safire
-                </h3>
-                <p className="text-xxs text-slate-400 font-bold uppercase">
-                  Consulte a frequência e lições pendentes de reposição por nome do aluno
-                </p>
-              </div>
-            </div>
+  const gerarCertificadoOficial = (tipo: 'impressao' | 'digital') => {
+    let dadosCurso = mapearTurmaParaCertificado(activeTurma);
+    if (!dadosCurso) { alert("Erro: Regras do certificado não encontradas."); return; }
+    
+    setHtmlCertFrente(gerarTextoCertificadoOficial(dadosCurso, activeAluno, tipo));
+    setHtmlCertVerso(gerarHtmlDesempenhoOficial(activeAluno, activeTurma, tipo));
+    setStep('impressao_cert');
+    window.scrollTo(0,0);
+  };
 
-            <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleBuscarAluno()}
-                placeholder="Digite o nome completo ou parte do nome do aluno..."
-                className="flex-1 p-4 border-2 border-slate-200 rounded-xl font-bold uppercase text-xs text-[#0b2545] outline-none focus:border-[#0b2545]"
-              />
-              <button
-                onClick={handleBuscarAluno}
-                disabled={searchLoading || !searchTerm.trim()}
-                className="bg-[#0b2545] hover:bg-black text-[#eebd1a] px-8 py-3.5 rounded-xl font-black text-xs uppercase shadow transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {searchLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                <span>{searchLoading ? 'Consultando...' : 'Pesquisar Aluno'}</span>
-              </button>
-            </div>
+  const perfGerarPDFRelatorioSimples = (tipoPDF: 'geral' | 'especifico') => {
+    const dbNotasCloud = { ...perfData, [activeAluno]: currentNotas };
+    setRelatorioTipo(tipoPDF);
+    let contentHTML = '';
 
-            {/* Search Results */}
-            {searchResults.length > 0 ? (
-              <div className="space-y-3 pt-4 border-t border-slate-100">
-                <h4 className="text-xxs font-black uppercase text-slate-400 tracking-wider">
-                  Alunos Encontrados ({searchResults.length}):
-                </h4>
-                {searchResults.map((r, idx) => (
-                  <div
-                    key={idx}
-                    className="p-5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-[#0b2545] transition"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-black text-sm text-[#0b2545] uppercase">{r.aluno}</h4>
-                        {r.temDuasFaltas && (
-                          <span className="bg-red-600 text-white text-3xs font-black uppercase px-2 py-0.5 rounded-full">
-                            2+ Faltas
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xxs font-bold text-slate-500 uppercase mt-0.5">
-                        Turma: <strong className="text-[#0b2545]">{r.turma}</strong> • Professor: <strong>{r.prof}</strong>
-                      </p>
-                      {r.faltas.length > 0 ? (
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          <span className="text-xxs font-black text-red-600 uppercase bg-red-100 border border-red-200 px-2.5 py-1 rounded-md">
-                            ⚠️ {r.faltas.length} falta(s) / pendência(s): {r.faltas.join(', ')}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="mt-2">
-                          <span className="text-xxs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md inline-block">
-                            ✅ Nenhuma falta pendente registrada
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                      <button
-                        onClick={() => handleOpenAgendamento(r.aluno, r.turma, r.prof, r.faltas)}
-                        className="bg-[#0b2545] hover:bg-[#123969] text-[#eebd1a] px-5 py-3 rounded-xl font-black text-xs uppercase shadow transition flex items-center justify-center gap-2 cursor-pointer flex-1 md:flex-none"
-                      >
-                        <CalendarCheck className="w-4 h-4" />
-                        <span>Agendar Reposição</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : searched && !searchLoading && (
-              <div className="p-8 bg-slate-50 border border-slate-200 rounded-2xl text-center text-slate-400 space-y-1">
-                <p className="text-xs font-bold uppercase">Nenhum aluno encontrado para "{searchTerm}".</p>
-                <p className="text-xxs font-medium">Verifique a grafia do nome ou tente pesquisar apenas pelo primeiro nome.</p>
-              </div>
-            )}
+    if(tipoPDF === 'geral') {
+      let gridH = '';
+      for(let i=0; i<maxL; i++) {
+        let l = dbNotasCloud[activeAluno][i] || {};
+        gridH += `
+        <div class="lesson-box" style="padding: 15px; border: 1px solid #ccc; border-radius: 8px;">
+          <div class="lesson-title" style="font-weight: 900; border-bottom: 1px solid #ccc; margin-bottom: 10px; padding-bottom: 5px;">Lesson ${i+1}</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            ${['po','co','pe','ce'].map(k => {
+              let v = Number(l[k as keyof typeof l]) || 0;
+              let color = v==0?'#fff':v==1?'#ef4444':v==2?'#f97316':v==3?'#eab308':v==4?'#3b82f6':'#22c55e';
+              return `<div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-size:11px; font-weight:bold; text-transform:uppercase;">${k=='po'?'P. Oral':k=='co'?'C. Oral':k=='pe'?'P. Escr':k=='ce'?'C. Escr':''}</div>
+                <div style="background-color:${color}; width: 16px; height: 16px; border-radius: 50%; border: 1px solid ${v==0?'#ccc':'transparent'}; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div>
+              </div>`;
+            }).join('')}
           </div>
+        </div>`;
+      }
 
-          {/* Radar de Retenção (Faltas e Assiduidade) */}
-          <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-            <div className="text-center space-y-2">
-              <Radio className="w-10 h-10 text-[#e2001a] mx-auto animate-pulse" />
-              <h3 className="font-black text-base uppercase text-[#0b2545]">Radar de Retenção & Faltas</h3>
-              <p className="text-xs text-slate-400 font-bold uppercase max-w-xl mx-auto">
-                Varredura automática para identificar alunos com faltas e reposições pendentes (Cores Vermelha e Amarela / Níveis 1, 2 e 3 na avaliação de desempenho)
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row justify-center gap-3 pt-2">
-              <button
-                onClick={() => handleStartRadar('rapido')}
-                disabled={radarLoading}
-                className="bg-[#e2001a] hover:bg-red-700 text-white px-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 flex-1 max-w-sm"
-              >
-                {radarLoading && radarType === 'rapido' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                <span>Radar Rápido (2+ Faltas)</span>
-              </button>
-
-              <button
-                onClick={() => handleStartRadar('detalhado')}
-                disabled={radarLoading}
-                className="bg-[#0b2545] hover:bg-[#123969] text-[#eebd1a] px-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 flex-1 max-w-sm"
-              >
-                {radarLoading && radarType === 'detalhado' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ListOrdered className="w-4 h-4" />}
-                <span>Radar Detalhado (Todas as Faltas)</span>
-              </button>
-            </div>
-
-            {radarProgress && (
-              <p className="text-center text-xs font-mono font-bold text-[#0b2545] pt-2">
-                {radarProgress}
-              </p>
-            )}
+      contentHTML = `
+      <div style="display: flex; gap: 30px;">
+        <div style="flex: 3; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">${gridH}</div>
+        <div style="flex: 1; padding-left: 20px; border-left: 2px solid #ccc;">
+          <div style="font-weight: 900; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 5px;">Assessment Index</div>
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 8px; display:flex; align-items:center; gap:5px;"><div style="width:14px; height:14px; border-radius:50%; background:#22c55e; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Supera o esperado</div>
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 8px; display:flex; align-items:center; gap:5px;"><div style="width:14px; height:14px; border-radius:50%; background:#3b82f6; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Atende ao esperado</div>
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 8px; display:flex; align-items:center; gap:5px;"><div style="width:14px; height:14px; border-radius:50%; background:#eab308; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Em desenvolvimento</div>
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 8px; display:flex; align-items:center; gap:5px;"><div style="width:14px; height:14px; border-radius:50%; background:#f97316; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Nível básico</div>
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 8px; display:flex; align-items:center; gap:5px;"><div style="width:14px; height:14px; border-radius:50%; background:#ef4444; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div> Não alcançado</div>
+          <div style="margin-top: 40px; text-align: center;">
+            <div style="font-weight: 900; font-size: 11px; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px solid #000; padding-bottom: 5px;">Overall Performance</div>
+            <div style="width: 120px; height: 120px; border-radius: 50%; margin: 0 auto; border: 2px solid #0b2545; background: ${calculateStudentPie(activeAluno, activeTurma)}; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div>
           </div>
+        </div>
+      </div>`;
+    } else {
+      let obsBlocks = '';
+      for(let i=0; i<maxL; i++) {
+        let l = dbNotasCloud[activeAluno][i] || {};
+        obsBlocks += `
+        <div style="border: 1px solid #000; padding: 15px; border-radius: 8px; page-break-inside: avoid; margin-bottom: 15px;">
+          <div style="font-weight: 900; text-transform: uppercase; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">Lesson ${i+1}</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            ${['A','B','C','D'].map(sub => {
+              let htmlDots = '<div style="display:flex; gap:10px; margin-bottom: 8px;">';
+              [{id:'po', l:'PO'}, {id:'co', l:'CO'}, {id:'pe', l:'PE'}, {id:'ce', l:'CE'}].forEach(sc => {
+                let v = Number(l[('cor'+sub+'_'+sc.id) as keyof typeof l]) || 0;
+                let color = v==0?'#fff':v==1?'#ef4444':v==2?'#f97316':v==3?'#eab308':v==4?'#3b82f6':'#22c55e';
+                htmlDots += `<div style="display:flex; align-items:center; gap:4px;"><span style="font-size:10px; font-weight:bold; color:#555;">${sc.l}</span><div style="width: 12px; height: 12px; border-radius: 50%; background-color: ${color}; border: 1px solid ${v==0?'#ccc':'#000'}; -webkit-print-color-adjust: exact; print-color-adjust: exact;"></div></div>`;
+              });
+              htmlDots += '</div>';
+              let obsText = (String(l[('obs'+sub) as keyof typeof l] || '')).trim();
+              return `
+              <div style="display: flex; flex-direction: column; gap: 5px;">
+                <div style="font-weight: 900; font-size: 11px; color: #0b2545; text-transform: uppercase;">Sub-lição ${i+1}${sub}</div>
+                ${htmlDots}
+                <div style="font-size: 11px; color: #333; line-height: 1.4;">${obsText || '<span style="color:#999; font-style:italic;">Nenhuma observação registrada.</span>'}</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }
+      contentHTML = `<div style="width: 100%;"><div style="font-weight: 900; font-size: 18px; text-transform: uppercase; margin-bottom: 20px; text-align: center; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 10px 0;">Relatório de Desenvolvimento Específico</div>${obsBlocks}</div>`;
+    }
 
-          {/* Radar Results List */}
-          {radarResults.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="font-black text-xs text-slate-400 uppercase tracking-widest">
-                  {radarType === 'rapido' ? 'Alunos com 2+ Faltas / Faltas Recentes' : 'Todos os Alunos com Faltas Registradas'} ({radarResults.length})
-                </h3>
-              </div>
+    setHtmlRelatorio(`
+      <div style="padding: 40px; position: relative; background: #fff; width: 297mm; min-height: 200mm; margin: 0 auto;">
+        <img src="https://i.postimg.cc/MGGygYGg/logo_opera_png.png" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; opacity: 0.05; z-index: 0; pointer-events: none;">
+        <div style="position: relative; z-index: 10;">
+          <div style="display:flex; justify-content:space-between; font-weight:bold; margin-bottom: 30px; font-size: 14px; border-bottom: 2px solid #ccc; padding-bottom: 10px;">
+            <div>PROFESSOR: ${isStaff ? activeProfOwner : session.userLogado}</div>
+            <div>TURMA: ${activeTurma || 'LAB'}</div>
+          </div>
+          ${contentHTML}
+          <div style="margin-top:30px; font-weight:900; font-size:1.4rem; text-transform:uppercase; border-bottom:3px solid #000; padding-bottom:10px;">STUDENT: ${activeAluno}</div>
+        </div>
+      </div>
+    `);
+    setStep('impressao_relatorio');
+    window.scrollTo(0,0);
+  };
 
-              <div className="grid gap-3">
-                {radarResults.map((r, idx) => (
-                  <div
-                    key={idx}
-                    className={`bg-white p-5 rounded-2xl border-l-4 ${
-                      r.temDuasFaltas ? 'border-red-500' : 'border-amber-500'
-                    } border-t border-r border-b border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-[#0b2545] transition`}
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-black text-sm text-[#0b2545] uppercase">{r.aluno}</h4>
-                        {r.temDuasFaltas && (
-                          <span className="bg-red-600 text-white text-3xs font-black uppercase px-2 py-0.5 rounded-full">
-                            2+ Faltas Críticas
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xxs font-bold text-slate-400 uppercase mt-0.5">
-                        Turma: <strong className="text-[#0b2545]">{r.turma}</strong> • Professor: <strong>{r.prof}</strong>
-                      </p>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {r.faltas.map((f, fIdx) => (
-                          <span key={fIdx} className="bg-red-100 text-red-800 border border-red-200 px-2 py-0.5 rounded text-xxs font-black uppercase">
-                            Falta: {f}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                      <button
-                        onClick={() => handleOpenAgendamento(r.aluno, r.turma, r.prof, r.faltas)}
-                        className="bg-[#0b2545] hover:bg-black text-[#eebd1a] px-5 py-3 rounded-xl font-black text-xs uppercase shadow transition flex items-center justify-center gap-2 cursor-pointer flex-1 md:flex-none"
-                      >
-                        <CalendarCheck className="w-4 h-4" />
-                        <span>Agendar Reposição</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+  return (
+    <div className="page-content w-full max-w-7xl mx-auto p-4 md:p-8 space-y-6">
+      {syncStatus && (
+        <div className="fixed bottom-6 right-6 bg-[#0b2545] text-white px-5 py-3 rounded-full font-black text-xs uppercase shadow-2xl z-50 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[#eebd1a]" /><span>{syncStatus}</span>
         </div>
       )}
 
-      {/* VISÃO 2: GESTÃO DE REPOSIÇÕES COM FILTROS */}
-      {visao === 'gestao' && (
-        <div className="space-y-6">
-          {/* Controls */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+      {step === 'turmas' && (
+        <div className="space-y-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b-2 border-slate-200 pb-6 gap-4">
             <div>
-              <h3 className="font-black text-lg text-[#0b2545] uppercase">Gestão de Agendamentos</h3>
-              <p className="text-xxs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                Acompanhe o status e cancele sessões se necessário
-              </p>
+              <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-[#0b2545]">Performance Lab</h1>
             </div>
-            <button
-              onClick={loadReposicoes}
-              disabled={gestaoLoading}
-              className="bg-[#0b2545] text-white px-5 py-2.5 rounded-xl font-black text-xs uppercase hover:bg-black transition flex items-center gap-2 cursor-pointer"
-            >
-              <RefreshCw className={`w-4 h-4 ${gestaoLoading ? 'animate-spin' : ''}`} />
-              <span>Atualizar</span>
-            </button>
+            {isStaff && (
+              <div className="bg-blue-50 border border-blue-200 px-4 py-2.5 rounded-xl flex items-center gap-2 text-[#0b2545] text-xxs font-black uppercase">
+                <Lock className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span>Modo Staff: Auditoria Completa</span>
+              </div>
+            )}
           </div>
 
-          {/* Search in Appointments */}
-          <input
-            type="text"
-            value={gestaoSearch}
-            onChange={(e) => setGestaoSearch(e.target.value)}
-            placeholder="🔍 Filtrar agendamentos por nome do aluno..."
-            className="w-full p-4 border-2 border-slate-200 rounded-xl font-bold uppercase text-xs text-[#0b2545] outline-none focus:border-[#0b2545]"
-          />
+          <div className="space-y-4">
+            <h3 className="font-black text-xs text-slate-400 uppercase tracking-widest border-t-2 border-slate-200 pt-6">
+              {isTeacher ? 'Suas Turmas Ativas' : 'Selecione o Professor'}
+            </h3>
 
-          {/* Filters */}
-          <div className="flex flex-wrap gap-2">
-            {['Todos', 'Pendente', 'Realizado', 'Faltou', 'Cancelado'].map((st) => (
-              <button
-                key={st}
-                onClick={() => setGestaoFilter(st)}
-                className={`px-5 py-2 rounded-xl text-xxs font-black uppercase transition ${
-                  gestaoFilter === st
-                    ? 'bg-[#0b2545] text-[#eebd1a] shadow-md scale-105'
-                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {st === 'Pendente' ? 'Agendados' : st === 'Realizado' ? 'Veio' : st === 'Faltou' ? 'Não Veio' : st}
-              </button>
+            {isTeacher ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {PERF_MASTER_DB[session.userLogado] && Object.keys(PERF_MASTER_DB[session.userLogado]).map((turma) => (
+                  <button key={turma} onClick={() => handleOpenTurma(turma, session.userLogado)} className="bg-white hover:bg-[#0b2545] text-[#0b2545] hover:text-white border-2 border-slate-200 hover:border-[#0b2545] p-6 rounded-2xl font-black text-xs uppercase transition shadow-sm text-center cursor-pointer group">
+                    <span className="block text-sm">{turma}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(PERF_MASTER_DB).map(prof => (
+                    <button
+                      key={prof}
+                      onClick={() => setSelectedProfStaff(prof)}
+                      className={`px-5 py-2.5 rounded-full text-xs font-black uppercase transition border-2 cursor-pointer ${
+                        selectedProfStaff === prof ? 'bg-[#0b2545] text-[#eebd1a] border-[#0b2545]' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      {prof}
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                  {PERF_MASTER_DB[selectedProfStaff] && Object.keys(PERF_MASTER_DB[selectedProfStaff]).map((turma) => (
+                    <button key={turma} onClick={() => handleOpenTurma(turma, selectedProfStaff)} className="bg-white hover:bg-[#0b2545] text-[#0b2545] hover:text-white border border-slate-200 hover:border-[#0b2545] p-4 rounded-xl font-black text-xs uppercase transition shadow-sm text-left cursor-pointer group">
+                      <span className="font-black text-xs block">{turma}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {step === 'alunos' && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-4 border-b-2 border-slate-200 pb-4">
+            <button onClick={() => setStep('turmas')} className="flex items-center gap-1.5 text-xs font-black uppercase text-[#0b2545] hover:text-red-500 cursor-pointer">
+              <ArrowLeft className="w-4 h-4" /> Voltar
+            </button>
+            <h2 className="text-xl font-black uppercase text-[#0b2545]">Turma: <span className="text-[#eebd1a]">{activeTurma}</span></h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {getAlunosDaTurma(activeTurma, activeProfOwner || session.userLogado).map((aluno) => (
+              <div key={aluno} onClick={() => handleOpenEditor(aluno)} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-[#0b2545] shadow-sm cursor-pointer flex justify-between">
+                <h4 className="font-black text-xs text-[#0b2545] uppercase">{aluno}</h4>
+                <div className="w-8 h-8 rounded-full border-2 border-[#0b2545]" style={{ background: calculateStudentPie(aluno, activeTurma) }} />
+              </div>
             ))}
           </div>
+        </div>
+      )}
 
-          {/* Reposições List */}
-          {gestaoLoading ? (
-            <div className="py-16 text-center text-slate-400">
-              <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin text-[#0b2545]" />
-              <p className="text-xs font-bold uppercase">Carregando da nuvem...</p>
+      {step === 'editor' && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b-2 border-slate-200 pb-4 gap-4">
+            <button onClick={() => setStep('alunos')} className="flex items-center gap-1.5 text-xs font-black uppercase text-[#0b2545] hover:text-red-500 cursor-pointer">
+              <ArrowLeft className="w-4 h-4" /> Voltar
+            </button>
+            <div className="flex flex-wrap gap-2">
+              {isStaff && percentComplete === 100 && !isCrianca && (
+                <>
+                  <button onClick={() => gerarCertificadoOficial('impressao')} className="bg-white border-2 border-[#0b2545] text-[#0b2545] hover:bg-[#0b2545] hover:text-[#eebd1a] px-4 py-2.5 rounded-xl text-xs font-black uppercase shadow transition cursor-pointer flex items-center gap-1">
+                    <Award className="w-4 h-4" /> Certificado Timbrado
+                  </button>
+                  <button onClick={() => gerarCertificadoOficial('digital')} className="bg-[#0b2545] text-[#eebd1a] hover:bg-black px-4 py-2.5 rounded-xl text-xs font-black uppercase shadow transition cursor-pointer flex items-center gap-1">
+                    <Download className="w-4 h-4" /> Certificado Digital
+                  </button>
+                </>
+              )}
+              <button onClick={() => perfGerarPDFRelatorioSimples(activeTab)} className="bg-slate-800 text-white hover:bg-black px-4 py-2.5 rounded-xl text-xs font-black uppercase shadow transition cursor-pointer flex items-center gap-1">
+                 <Download className="w-4 h-4 text-[#eebd1a]" /> Baixar Relatório
+              </button>
+              {isTeacher && (
+                <button onClick={handleSalvarNotas} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase shadow cursor-pointer flex items-center gap-1">
+                  <Save className="w-4 h-4" /> Salvar
+                </button>
+              )}
             </div>
-          ) : filteredReposicoes.length === 0 ? (
-            <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center text-slate-400">
-              <p className="text-xs font-bold uppercase">Nenhum agendamento encontrado.</p>
+          </div>
+
+          <div className="flex gap-4 border-b-2 border-slate-200 pb-2">
+            <button onClick={() => setActiveTab('geral')} className={`font-black uppercase text-xs pb-2 border-b-4 cursor-pointer transition ${activeTab === 'geral' ? 'border-[#0b2545] text-[#0b2545]' : 'border-transparent text-slate-400 hover:text-[#0b2545]'}`}>Overall (Geral)</button>
+            <button onClick={() => setActiveTab('especifico')} className={`font-black uppercase text-xs pb-2 border-b-4 cursor-pointer transition ${activeTab === 'especifico' ? 'border-[#0b2545] text-[#0b2545]' : 'border-transparent text-slate-400 hover:text-[#0b2545]'}`}>Específico</button>
+          </div>
+
+          {activeTab === 'geral' && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {Array.from({ length: maxL }).map((_, lIdx) => (
+                <div key={lIdx} className="bg-white border-2 border-slate-200 p-4 rounded-2xl space-y-3">
+                  <h4 className="text-center font-black text-xs uppercase text-[#0b2545] border-b pb-2">Lesson {lIdx + 1}</h4>
+                  {['po', 'co', 'pe', 'ce'].map((c) => (
+                    <div key={c} className="flex justify-between items-center">
+                      <span className="text-xxs font-bold uppercase">{c}</span>
+                      <div className="flex gap-1">
+                        {[0, 1, 2, 3, 4, 5].map((val) => (
+                          <button key={val} onClick={() => setNotaCrit(lIdx, c, val)} className={`color-dot btn-${val === 0 ? 'white' : val === 1 ? 'red' : val === 2 ? 'orange' : val === 3 ? 'yellow' : val === 4 ? 'blue' : 'green'} ${Number(currentNotas[lIdx]?.[c as keyof typeof currentNotas[0]]) === val ? 'selected' : ''}`} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
-          ) : (
-            <div className="grid gap-4">
-              {filteredReposicoes.map((rep) => (
-                <div
-                  key={rep.id}
-                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-[#0b2545] transition space-y-3"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-black text-sm text-[#0b2545] uppercase">{rep.aluno}</h4>
-                      <p className="text-xxs font-bold text-slate-400 uppercase">Turma: {rep.turma}</p>
-                    </div>
+          )}
 
-                    <span className={`px-3 py-1 rounded-full text-xxs font-black uppercase ${
-                      rep.status === 'Pendente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                      rep.status === 'Realizado' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
-                      rep.status === 'Faltou' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
-                      'bg-red-100 text-red-800 border border-red-300'
-                    }`}>
-                      {rep.status === 'Realizado' ? 'Veio' : rep.status === 'Faltou' ? 'Não Veio' : rep.status}
-                    </span>
-                  </div>
+          {activeTab === 'especifico' && (
+            <div className="space-y-6">
+              {Array.from({ length: maxL }).map((_, lIdx) => (
+                <div key={lIdx} className="bg-white border-2 border-slate-200 p-6 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {['A', 'B', 'C', 'D'].map((sub) => (
+                    <div key={sub} className="bg-slate-50 p-3 rounded-xl border space-y-2">
+                      <span className="text-xxs font-black uppercase bg-[#0b2545] text-[#eebd1a] px-2 py-1 rounded">Sub-lição {lIdx + 1}{sub}</span>
+                      
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        {['po', 'co', 'pe', 'ce'].map(sc => (
+                          <div key={sc} className="flex justify-between items-center bg-white p-1 rounded border">
+                            <span className="text-[10px] font-black uppercase text-slate-500">{sc}</span>
+                            <div className="flex gap-[2px]">
+                              {[0, 1, 2, 3, 4, 5].map((val) => (
+                                <button key={val} onClick={() => setNotaSubCrit(lIdx, sub, sc, val)} className={`mini-color-dot btn-${val === 0 ? 'white' : val === 1 ? 'red' : val === 2 ? 'orange' : val === 3 ? 'yellow' : val === 4 ? 'blue' : 'green'} ${Number(currentNotas[lIdx]?.[`cor${sub}_${sc}` as keyof typeof currentNotas[0]]) === val ? 'selected' : ''}`} />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100 text-xxs">
-                    <div>
-                      <span className="text-slate-400 font-bold uppercase block">Lição</span>
-                      <strong className="text-[#e2001a]">{rep.licao}</strong>
+                      <textarea value={(currentNotas[lIdx]?.[`obs${sub}` as keyof typeof currentNotas[0]] as string) || ''} onChange={(e) => setNotaObs(lIdx, sub, e.target.value)} rows={2} className="w-full text-xs p-2 rounded border" placeholder="Observações pedagógicas..." />
                     </div>
-                    <div>
-                      <span className="text-slate-400 font-bold uppercase block">Data & Hora</span>
-                      <strong className="text-slate-700">{rep.data} às {rep.hora}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-bold uppercase block">Prof. Sub</span>
-                      <strong className="text-[#0b2545]">{rep.profSub}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-bold uppercase block">Modalidade</span>
-                      <strong className="text-slate-700">{rep.modalidade}</strong>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center text-xxs text-slate-400 font-bold pt-1">
-                    <span>Criado por: {rep.staff || 'Staff'}</span>
-                    {rep.status === 'Pendente' && (
-                      <button
-                        onClick={() => handleCancelarReposicao(rep.id)}
-                        className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg text-xxs font-black uppercase transition cursor-pointer"
-                      >
-                        Cancelar Agendamento
-                      </button>
-                    )}
-                  </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -796,146 +592,30 @@ export default function RetencaoPanel({ session, perfData = {} }: RetencaoPanelP
         </div>
       )}
 
-      {/* MODAL DE AGENDAMENTO */}
-      {modalOpen && (
-        <div className="fixed inset-0 bg-[#0b2545]/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full border-4 border-[#eebd1a] shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-black text-[#0b2545] uppercase">
-                {modalStep === 'form' ? 'Agendar Sessão' : 'Mensagem Pronta'}
-              </h3>
-              <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-red-500">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {modalStep === 'form' ? (
-              <div className="space-y-4 text-xs font-bold text-[#0b2545]">
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-                  <p className="text-xxs uppercase text-slate-400 font-bold">Aluno / Turma</p>
-                  <p className="font-black text-sm">{selectedStudentInfo?.aluno} - {selectedStudentInfo?.turma}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xxs uppercase text-slate-500 block mb-1">Tipo de Aula</label>
-                    <select
-                      value={tipoAula}
-                      onChange={(e) => setTipoAula(e.target.value as 'Reposição' | 'Monitoria')}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none cursor-pointer"
-                    >
-                      <option value="Reposição">Reposição (1h)</option>
-                      <option value="Monitoria">Monitoria (30m)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xxs uppercase text-slate-500 block mb-1">Lição</label>
-                    <input
-                      type="text"
-                      value={licaoDesejada}
-                      onChange={(e) => setLicaoDesejada(e.target.value)}
-                      placeholder="Ex: Lesson 3B"
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold uppercase"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xxs uppercase text-slate-500 block mb-1">Prof. Substituto</label>
-                    <select
-                      value={profSub}
-                      onChange={(e) => setProfSub(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none cursor-pointer"
-                    >
-                      <option value="EDIMO">Edimo</option>
-                      <option value="IANNE">Ianne</option>
-                      <option value="JOÃO">João</option>
-                      <option value="MAISA">Maisa</option>
-                      <option value="PABLO">Pablo</option>
-                      <option value="JOELMA">Joelma</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xxs uppercase text-slate-500 block mb-1">Modalidade</label>
-                    <select
-                      value={modalidade}
-                      onChange={(e) => setModalidade(e.target.value as 'Online' | 'Presencial')}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none cursor-pointer"
-                    >
-                      <option value="Online">Online</option>
-                      <option value="Presencial">Presencial</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xxs uppercase text-slate-500 block mb-1">Data</label>
-                    <input
-                      type="date"
-                      value={dataDesejada}
-                      onChange={(e) => setDataDesejada(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xxs uppercase text-slate-500 block mb-1">Horário Disponível</label>
-                    <select
-                      value={horaDesejada}
-                      onChange={(e) => setHoraDesejada(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none cursor-pointer"
-                    >
-                      {availableSlots.length > 0 ? (
-                        availableSlots.map((slot) => (
-                          <option key={slot} value={slot}>{slot}</option>
-                        ))
-                      ) : (
-                        <option value="">Nenhum horário livre</option>
-                      )}
-                    </select>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleSalvarAgendamento}
-                  disabled={savingAgendamento || !horaDesejada}
-                  className="w-full bg-[#0b2545] hover:bg-black text-[#eebd1a] font-black py-4 rounded-xl text-xs uppercase shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer mt-4"
-                >
-                  {savingAgendamento ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CalendarCheck className="w-4 h-4" />}
-                  <span>{savingAgendamento ? 'Gravando Agendamento...' : 'Salvar e Gerar Mensagem'}</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-500 font-bold uppercase">
-                  Agendamento salvo na nuvem! Copie o texto formatado abaixo para enviar via WhatsApp:
-                </p>
-                <textarea
-                  value={textoWpp}
-                  onChange={(e) => setTextoWpp(e.target.value)}
-                  rows={8}
-                  className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-mono text-xs text-[#0b2545] outline-none"
-                />
-
-                <button
-                  onClick={handleCopyWpp}
-                  className={`w-full font-black py-4 rounded-xl text-xs uppercase shadow-xl transition flex items-center justify-center gap-2 cursor-pointer ${
-                    copied ? 'bg-emerald-600 text-white' : 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                  }`}
-                >
-                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  <span>{copied ? 'Mensagem Copiada com Sucesso!' : 'Copiar Mensagem para WhatsApp'}</span>
-                </button>
-              </div>
-            )}
+      {/* ÁREA DE IMPRESSÃO NATIVA - RELATÓRIO */}
+      {step === 'impressao_relatorio' && (
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="flex justify-between items-center no-print bg-slate-100 p-4 rounded-xl">
+            <button onClick={() => setStep('editor')} className="text-xs font-black uppercase text-[#0b2545] hover:text-red-500 cursor-pointer flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> VOLTAR AO EDITOR</button>
+            <button onClick={() => window.print()} className="bg-[#0b2545] text-[#eebd1a] px-8 py-3 rounded-xl text-xs font-black uppercase shadow cursor-pointer">IMPRIMIR / SALVAR PDF (A4)</button>
           </div>
+          <div className="print-area" dangerouslySetInnerHTML={{ __html: htmlRelatorio }} />
         </div>
       )}
 
+      {/* ÁREA DE IMPRESSÃO NATIVA - CERTIFICADO */}
+      {step === 'impressao_cert' && (
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="flex justify-between items-center no-print bg-slate-100 p-4 rounded-xl">
+            <button onClick={() => setStep('editor')} className="text-xs font-black uppercase text-[#0b2545] hover:text-red-500 cursor-pointer flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> VOLTAR AO EDITOR</button>
+            <button onClick={() => window.print()} className="bg-[#0b2545] text-[#eebd1a] px-8 py-3 rounded-xl text-xs font-black uppercase shadow cursor-pointer">IMPRIMIR / SALVAR PDF (A4)</button>
+          </div>
+          <div className="print-area flex flex-col gap-8">
+            <div dangerouslySetInnerHTML={{ __html: htmlCertFrente }} />
+            <div dangerouslySetInnerHTML={{ __html: htmlCertVerso }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
