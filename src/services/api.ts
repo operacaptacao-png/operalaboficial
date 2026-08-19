@@ -5,7 +5,7 @@
 
 import { StudentPerformanceData, ReposicaoItem, SafireStudentCheck } from '../types';
 
-export const URL_API_DESEMPENHO = "https://script.google.com/macros/s/AKfycbzAY6yLI80vR6m4EA6R80xE5K8OOcl1xW917LdvPVchZW_cOLhPLvvQ-4uVRgpmETJx/exec";
+export const URL_API_DESEMPENHO = "https://script.google.com/macros/s/AKfycbxXEwBn5elEygEqZFt8bNlBZ6w98w5Xed2Z44zdTF93mRGKb--6ZGrZ3BEK80zUDRlRtg/exec";
 export const SCRIPT_URL_SAFIRE = "https://script.google.com/macros/s/AKfycbz-6QfjR8G4V6jCgZztYNu7LcOGjXIQtYYZ06ZCzsMjs9LAaMdI5e4B2JpORm_zlnv_Pw/exec";
 
 export function normalizeString(str?: string): string {
@@ -242,22 +242,54 @@ export async function agendarReposicao(dados: {
 }
 
 /**
- * Consulta faltas no Safire
+ * Consulta faltas no Safire com cache local e tolerância a cold start
  */
-export async function checkSafireFaltas(alunoNome: string): Promise<SafireStudentCheck> {
+export async function checkSafireFaltas(alunoNome: string, bypassCache: boolean = false): Promise<SafireStudentCheck> {
+  const normKey = `safire_${normalizeString(alunoNome)}`;
+  
+  if (!bypassCache) {
+    try {
+      const cached = localStorage.getItem(normKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object' && !parsed.error) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6500);
-    const res = await fetch(`${SCRIPT_URL_SAFIRE}?nome=${encodeURIComponent(alunoNome)}`, {
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
+    const res = await fetch(`${SCRIPT_URL_SAFIRE}?nome=${encodeURIComponent(alunoNome)}&_t=${Date.now()}`, {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
     if (res.ok) {
       const data = await res.json();
-      return data;
+      if (data && typeof data === 'object' && !data.error) {
+        try {
+          localStorage.setItem(normKey, JSON.stringify(data));
+        } catch {
+          // ignore
+        }
+        return data;
+      }
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn(`Erro ao consultar Safire para ${alunoNome}:`, err);
+    // Tenta fallback do cache mesmo expirado
+    try {
+      const cached = localStorage.getItem(normKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch {
+      // ignore
+    }
   }
   return { error: true };
 }
