@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { UserSession, StudentPerformanceData } from '../types';
-import { checkSafireFaltas } from '../services/api';
+import { checkSafireFaltas, normalizeString } from '../services/api';
 import { eventsDB } from '../data/database';
 import { 
   CheckCircle2, 
@@ -77,25 +77,72 @@ export default function DashboardAluno({
     return `conic-gradient(#ef4444 0% ${p1}%, #f97316 ${p1}% ${p1 + p2}%, #eab308 ${p1 + p2}% ${p1 + p2 + p3}%, #3b82f6 ${p1 + p2 + p3}% ${p1 + p2 + p3 + p4}%, #22c55e ${p1 + p2 + p3 + p4}% 100%)`;
   };
 
+  const getFaltasFromPerfData = (alunoNome: string): string[] => {
+    const norm = normalizeString(alunoNome);
+    let notas = perfData[alunoNome] || [];
+    if (!notas || notas.length === 0) {
+      const matchKey = Object.keys(perfData).find(
+        (k) => normalizeString(k) === norm || normalizeString(k).includes(norm) || norm.includes(normalizeString(k))
+      );
+      if (matchKey) {
+        notas = perfData[matchKey];
+      }
+    }
+
+    const isEspanhol = session.turmaDisplay.toUpperCase().startsWith('ESP');
+    const maxLessons = isEspanhol ? 5 : 8;
+    const faltas: string[] = [];
+
+    for (let i = 0; i < maxLessons; i++) {
+      const lesson = notas[i];
+      if (lesson) {
+        const asVal = Number(lesson.as);
+        // Cores Vermelho (1), Laranja (2) e Amarelo (3) correspondem a falta / reposição pendente
+        if (asVal === 1 || asVal === 2 || asVal === 3) {
+          faltas.push(`Lesson ${i + 1}`);
+        }
+      }
+    }
+    return faltas;
+  };
+
   const loadSafire = async () => {
     if (isStaff || isProf) return;
     setSafireLoading(true);
     setSafireError(false);
+
+    // 1. Faltas obtidas da planilha de avaliações (Performance)
+    const faltasPerf = getFaltasFromPerfData(session.userLogado);
+
     try {
       const res = await checkSafireFaltas(session.userLogado);
-      if (!res.error && res.quaisFaltou) {
-        setSafireFaltas(res.quaisFaltou);
-        if (onAbsenceStatusChange) {
-          onAbsenceStatusChange(res.quaisFaltou.length > 0);
+      let todasFaltas = [...faltasPerf];
+      if (!res.error) {
+        if (res.quaisFaltou && Array.isArray(res.quaisFaltou)) {
+          res.quaisFaltou.forEach((f) => {
+            if (!todasFaltas.includes(f)) {
+              todasFaltas.push(f);
+            }
+          });
         }
-      } else {
-        setSafireFaltas([]);
-        if (onAbsenceStatusChange) {
-          onAbsenceStatusChange(false);
+        if (res.quaisAgendar && Array.isArray(res.quaisAgendar)) {
+          res.quaisAgendar.forEach((f) => {
+            if (!todasFaltas.includes(f)) {
+              todasFaltas.push(f);
+            }
+          });
         }
       }
+      setSafireFaltas(todasFaltas);
+      if (onAbsenceStatusChange) {
+        onAbsenceStatusChange(todasFaltas.length > 0);
+      }
     } catch {
-      setSafireError(true);
+      setSafireFaltas(faltasPerf);
+      if (onAbsenceStatusChange) {
+        onAbsenceStatusChange(faltasPerf.length > 0);
+      }
+      setSafireError(false);
     } finally {
       setSafireLoading(false);
     }
@@ -105,7 +152,7 @@ export default function DashboardAluno({
     if (!isStaff && !isProf) {
       loadSafire();
     }
-  }, [session.userLogado, isStaff, isProf]);
+  }, [session.userLogado, isStaff, isProf, perfData]);
 
   // Próximos eventos
   const hoje = new Date();
@@ -346,7 +393,7 @@ export default function DashboardAluno({
           </div>
 
           {/* Card 2: Frequência & Assiduidade */}
-          <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200 flex flex-col justify-between">
+          <div id="card-assiduidade-aluno" className="bg-white rounded-2xl p-6 shadow-md border border-slate-200 flex flex-col justify-between scroll-mt-24">
             <div>
               <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                 <h3 className="font-black text-xs md:text-sm uppercase tracking-wider text-[#0b2545] flex items-center gap-2">
@@ -389,7 +436,7 @@ export default function DashboardAluno({
                     ))}
                   </div>
                   <p className="text-xxs font-bold text-red-700 pt-1 border-t border-red-200">
-                    ⚠️ Agende sua reposição com a coordenação pedagógica.
+                    ⚠️ Reposição necessária para manter seu conteúdo e progresso em dia.
                   </p>
                 </div>
               ) : (
@@ -404,7 +451,7 @@ export default function DashboardAluno({
             <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center text-xxs text-slate-400 font-bold uppercase">
               <span>Sincronizado via Safire</span>
               <button onClick={() => onNavigate('contato')} className="text-[#0b2545] hover:underline font-extrabold">
-                Falar com coordenação →
+                Atendimento / Contato →
               </button>
             </div>
           </div>
