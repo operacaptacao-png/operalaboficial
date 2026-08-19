@@ -46,8 +46,13 @@ export interface ReposicaoItem {
 export interface SafireStudentCheck {
   error?: boolean;
   quaisFaltou?: string[];
+  quaisAgendar?: string[];
   totalFaltas?: number;
-  message?: string;
+  mensagem?: string;
+  despedida?: string;
+  professor?: string;
+  turma?: string;
+  aluno?: string;
 }
 
 export interface CalendarEvent {
