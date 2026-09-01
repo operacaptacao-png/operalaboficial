@@ -31,37 +31,37 @@ export const PERF_MASTER_DB: Record<string, Record<string, string[]>> = {
     "TGT3SAB10A26.1": ["Ester Nascimento Santos", "Ícaro Portela Meirelles", "Nicole Marques Ribeiro", "Raissa Karen Simas Portugal", "Camila Pereira Da Silva Fonseca", "João Eduardo De Almeida Araujo Santana"],
     "EXPLORES1TER14A26.1": ["Bernardo Vaccarezza Merces", "Maria Rita Ramos Borges Neta", "Pietro Oliveira dos Santos Silva"],
     "EXPLORES1QUI14A26.1": ["Arthur Cedraz Araujo", "Asafe Salomão Ribeiro Nunes Simões de Freitas", "Felipe de Araujo Moreira", "Julia Heloísa Ferreira de Oliveira", "Kevin Lohan Santos Noguiera"],
-    "TGT1QUI19A26.2": ["Narjara Lucena Ribeiro Fateicha Neves", "Roniel Andrade Almeida"]
+    "TGT1QUI19A26.2": ["Narjara Lucena Ribeiro Fateicha Neves", "Roniel Andrade Almeida", "Geovana dos Santos de Jesus"]
   },
   "JOÃO": {
     "TGT1QUA16A26.1": ["Anthony Brandão Lima", "Heloísa Ribeiro Lobo", "Heloisah Lima das Neves", "Ludmila Freitas Souza", "Melissa Pereira Amorim", "Natalia Roberta Pereira da Silva", "Victoria Soares Carvalho de Lima", "Vyctor Santos Santana", "Willyan da Silva Almeida", "Evellyn Silva Ferreira"],
-    "TGT1SAB08A26.1": ["Ana Julia Nunes Magalhães Rocha", "Andressa Oliveira Barros", "Ana Maria Rodrigues Ferraz Dos Santos", "Artur Cardoso da Costa", "Gabriel Grisostomo Barbosa", "Jennifer Dhandara Gouveia Pamponet Macedo", "Júlia Reis Silva", "Lavínia de Souza Pereira", "Sthefani da Silva Moura", "Yasmim Do Carmo Mascarenhas", "Jeska Souza Matos", "Davi Lucas Ferraz Reis"]
+    "TGT1SAB08A26.1": ["Ana Julia Nunes Magalhães Rocha", "Andressa Oliveira Barros", "Ana Maria Rodrigues Ferraz Dos Santos", "Artur Cardoso da Costa", "Gabriel Grisostomo Barbosa", "Jennifer Dhandara Gouveia Pamponet Macedo", "Júlia Reis Silva", "Lavínia de Souza Pereira", "Sthefani da Silva Moura", "Yasmim Do Carmo Mascarenhas", "Davi Lucas Ferraz Reis"]
   },
   "LARISSA": {
-    "XP1QUI16A26.1": ["João Pedro de Carvalho Lima Nunes", "Lucas Reis Miotto", "Jhonatan Moreira Veloso", "Louise de Araujo Silva", "Annaly dos Santos Araújo", "Enzo de Souza Ribeiro"],
+    "XP1QUI16A26.1": ["João Pedro de Carvalho Lima Nunes", "Lucas Reis Miotto", "Jhonatan Moreira Veloso", "Louise de Araujo Silva", "Annaly dos Santos Araújo", "Enzo de Souza Ribeiro", "Anna Clara Santana Oliveira", "Tiago José Silva Oliveira Filho"],
     "XP1SAB08A26.1": ["Anna Beatriz Mota Santos", "Laila Mirela Lima de Almeida Cruz", "Maria Elliza Meira Bastos", "Maria Eloísa Araujo Soares", "Nicole Reis de Santana", "Evelly Passos Dos Santos Silva", "Julya Correia da Luz", "Maria Luiza de souza Ribeiro", "Noan Alves de Lima Silva"],
-    "TGT2SAB10A26.1": ["Bruno Otávio dos Santos da Cunha", "Ellen Catharyne Villas Boas Oliveira da Silva", "Guilherme Oliveira Marques Ribeiro", "Júlia de Jesus Macêdo", "Levi Moreira Venas", "Maria Luiza Simplício Lopes", "Stephanie Silva de Oliveira Cunha", "Joelma Freitas da Mota", "Abraão Nunes Barreto"],
+    "TGT2SAB10A26.1": ["Bruno Otávio dos Santos da Cunha", "Ellen Catharyne Villas Boas Oliveira da Silva", "Guilherme Oliveira Marques Ribeiro", "Júlia de Jesus Macêdo", "Levi Moreira Venas", "Maria Luiza Simplício Lopes", "Stephanie Silva de Oliveira Cunha", "Joelma Freitas da Mota", "Abraão Nunes Barreto", "João Vitor Silva Vasconcelos"],
     "ADV3TER16A26.1": ["Ana Luiza Lima de Almeida", "Arthur dos Santos de Jesus", "Joaquim Ramos Borges Freitas", "Larissa De Jesus Silva De Almeida", "Levi Ribeiro Barros", "Melissa Reis Barbosa"],
     "ADV2TER14A26.1": ["Augusto César da Silva Nunes", "Breno Alves Nogueira Souza", "João Pedro Lima Ramos", "Lara Alves Rodrigues", "Leonardo Rocha Costa", "Maria Fernanda Franco Amaral", "Maria Luiza Magalhães de Almeida", "Melissa Kioshi Coutinho Estrela", "Raphael Rodrigues dos Santos", "Raquel de Freitas Rodrigues", "Fernando Antonio Azevedo Lima"],
-    "XP3QUI14A26.1": ["Gabriel Oliveira Teles", "Julia Cerqueira Pedra", "Ana Beatriz Guimarães Vieira", "Sophia Almeida do Rosário", "Laura de Araujo Moreira", "Miguel Castro Lima", "Analu Santana Araújo Alves", "Benjamim Silva Nascimento"]
+    "XP3QUI14A26.1": ["Julia Cerqueira Pedra", "Ana Beatriz Guimarães Vieira", "Sophia Almeida do Rosário", "Laura de Araujo Moreira", "Miguel Castro Lima", "Analu Santana Araújo Alves", "Benjamim Silva Nascimento"]
   },
   "SABRINA": {
     "EXPTAQUI16A26.1": ["Adalberto Souza Santos da Silva", "João Lucas Da Silva Cardoso", "Júlia Porto de Sousa", "Talita Lima de Almeida"],
     "EXPTBSAB10A26.1": ["Alice Cerqueira de Oliveira", "Alvaro Afonso Da Silva Nunes", "Davi Cesar Carvalho Alves", "Flávia Lima Ramos", "Jeferson Wilhams Gama Leite", "Leticia Silva De Jesus Lopes", "Luna Lima Barreto", "Maria Clara Ataíde Santana", "Maria Eduarda Dos Santos Batista", "Vladimir Ramos Vitorino De Assis"],
     "TGT1SAB08A25.2": ["Alana Olga Aragão Lima", "Amanda Damasceno Souza Da Silva", "Pedro Argus Campos de Matos", "Lucimara de Jesus Gouveia"],
     "TGT1QUI19A25.2": ["Adlla Katarine Aragão Cruz Passos", "Alexandre Aquino", "Beatriz Karoliny Vieira da Silva", "Carla Cristina Santos Neri", "Glessia Carneiro Guimarães", "Ramon de Cerqueira Silva", "Robson Andrade Cardoso"],
-    "TGT1SAB08A26.2": ["Ezequiel dos Santos Gonçalves", "Jeferson de Assis Santos", "Lenize Maria Pereira Portela", "Maiza Santos de Santana", "Tiago Vinicius Matos de Silveira", "Joana Darck Otoni de Sousa"],
-    "TGT2QUI19A26.2": ["Adlla Katarine Aragão Cruz Passos", "Alexandre Aquino", "Glecia Carneiro Guimarães", "Ramon de Cerqueira Silva", "Robson Andrade Cardoso"]
+    "TGT1SAB08A26.2": ["Ezequiel dos Santos Gonçalves", "Jeferson de Assis Santos", "Lenize Maria Pereira Portela", "Maiza Santos de Santana", "Tiago Vinicius Matos de Silveira", "Joana Darck Otoni de Sousa", "Maria Clara Ferreira Figueirêdo"],
+    "TGT2QUI19A26.2": ["Adlla Katarine Aragão Cruz Passos", "Alexandre Aquino", "Glecia Carneiro Guimarães", "Ramon de Cerqueira Silva", "Robson Andrade Cardoso", "Antonio Marcelo Albuquerque do Nascimento", "Leticia Passos Andrade"]
   },
   "JOELMA": {
-    "FR1SEG19A26.1": ["Camila Ferraz Pinto e Souza", "Francisco Gabriel de Almeida Rego", "Stêfane Costa Carneiro", "JADSON DE SANTANA LIMA", "Mariana Souza de Oliveira"],
+    "FR1SEG19A26.1": ["Camila Ferraz Pinto e Souza", "Francisco Gabriel de Almeida Rego", "Stêfane Costa Carneiro", "JADSON DE SANTANA LIMA"],
     "FR1SAB08A25.2": ["Eduarda Borges Santana", "Giovanna Araujo Looser", "Ivane Tavares de Souza", "Rafaella Andrade de Souza"]
   },
   "PABLO": {
-    "ESP2SEG19A26.1": ["Jonhy Herbert Gonçalves Evangelista", "Maria Eduarda Vidal Schunemann Simões Azevedo", "Ana Letícia Rabelo Araujo Martins", "Lucas Da Silva Oliveira", "Maria Alice Neco Oliveira", "Moisés Leal da Costa"],
+    "ESP2SEG19A26.1": ["Jonhy Herbert Gonçalves Evangelista", "Maria Eduarda Vidal Schunemann Simões Azevedo", "Ana Letícia Rabelo Araujo Martins", "Lucas Da Silva Oliveira", "Maria Alice Neco Oliveira"],
     "ESP2QUI19A26.1": ["Adevani Correia da Silva", "Gabriela da Cruz da Silva", "Letícia Passos Andrade", "Thais Loren Silva Moraes de Souza", "Manuela Carvalho Rios Souza", "Quezia Soares E Soares"],
     "ESP1QUA19A26.1": ["Angela Guimarães Martins", "Gilcimar Paim", "Iago de Oliveira Eneas", "Katiane da Silva Brito", "Kely de Melo Oliveira", "Nadja Maria da Silva", "Natalia Roberta Pereira da Silva"],
-    "ESP1SAB08A26.1": ["Jozilma lima dos santos", "Neuma Novaes de Souza"],
+    "ESP1SAB08A26.1": ["Neuma Novaes de Souza"],
     "ESP1SAB10A25.2": ["Daniele Marquetti de Melo", "Emerson Samuel Marquetti Machado", "Everaldo Nazareno Cézar de Melo Marquetti"]
   },
   "MAISA": {}
@@ -88,8 +88,35 @@ export const HORARIOS_ATIVOS: Record<string, Record<number, { s: string; e: stri
   }
 };
 
+export const TELEFONES_ALUNOS: Record<string, string> = {
+  "Clarice Santos Guimarães Bonfim": "5571991972140",
+  "Laura Lopes Evangelista": "5571992932682",
+  "Carlos Eduardo Alves Dos Santos": "5575992841062"
+};
+
+export const PROF_EMAILS_DB: Record<string, string> = {
+  "BRENDA": "brenda.operaidiomas@gmail.com",
+  "EDIMO": "edimo.operaidiomas@gmail.com",
+  "IANNE": "ianne.operaidiomas@gmail.com",
+  "JOÃO": "joao.operaidiomas@gmail.com",
+  "JOAO": "joao.operaidiomas@gmail.com",
+  "LARISSA": "larissa.operaidiomas@gmail.com",
+  "SABRINA": "sabrina.operaidiomas@gmail.com",
+  "JOELMA": "joelma.operaidiomas@gmail.com",
+  "PABLO": "pablo.operaidiomas@gmail.com",
+  "MAISA": "maisa.operaidiomas@gmail.com"
+};
+
+export const EMAIL_VERIFICACAO = "opera.captacao@gmail.com";
+export const EMAIL_COORDENACAO = "operaeducacional@gmail.com";
+
+export function getProfEmail(profName?: string): string {
+  if (!profName) return EMAIL_VERIFICACAO;
+  const clean = profName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+  return PROF_EMAILS_DB[clean] || `${clean.toLowerCase()}.operaidiomas@gmail.com`;
+}
+
 export const eventsDB: CalendarEvent[] = [
-  { start: "2026-01-01", end: "2026-02-06", title: "Recesso Escolar", type: "red" },
   { date: "2026-02-07", title: "Início das Aulas (Sábados)", type: "blue", highlight: true },
   { date: "2026-02-09", title: "Início das Aulas (Seg/Qua)", type: "blue", highlight: true },
   { date: "2026-02-10", title: "Início das Aulas (Ter/Qui)", type: "blue", highlight: true },
