@@ -1,20 +1,40 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# OPERALAB - Portal Integrado Pedagógico
 
-# Run and deploy your AI Studio app
+Portal educacional para gestão de turmas, frequência via Safire, auditoria pedagógica, diário de classe, portal de áudios e emissão de certificados e relatórios em PDF A4.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/884ec6aa-32e1-4ae3-990f-ee44134970a3
+## 🚀 Como Rodar e Publicar no GitHub / Cloudflare / Vercel
 
-## Run Locally
+### 1. No GitHub Pages (Opção mais simples: Pasta `/docs` sem Actions)
+1. Suba o repositório no seu GitHub.
+2. Acesse seu repositório: **Settings** > **Pages**.
+3. Em **Source**, mantenha **Deploy from a branch**.
+4. Em **Branch**, selecione **main** (ou **master**) e escolha a pasta **/docs**.
+5. Clique em **Save**. O GitHub publicará os arquivos compilados em segundos!
 
-**Prerequisites:**  Node.js
+### 2. No GitHub Pages (Opção Automática via GitHub Actions)
+1. Acesse seu repositório: **Settings** > **Pages**.
+2. Em **Source**, selecione **GitHub Actions**.
+3. O fluxo configurado em `.github/workflows/deploy.yml` fará o build e deploy automaticamente a cada commit.
 
+### 3. No Cloudflare Pages
+**Se você conectar via Git / GitHub:**
+- **Framework Preset**: `Vite`
+- **Build Command**: `npm run build`
+- **Build Output Directory**: `dist`
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+**Se você fizer Upload Direto (Arrastar e Soltar):**
+- Envie diretamente a pasta `dist` (ou a pasta `docs`).
+
+### 3. Rodando Localmente
+```bash
+npm install
+npm run dev
+```
+
+### 4. Compilando para Produção
+```bash
+npm run build
+```
+Os arquivos finais compilados (HTML, CSS e JS puros) estarão na pasta `dist/`.
